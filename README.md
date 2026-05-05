@@ -9,26 +9,21 @@
 
 </div>
 
-## 🕒 Note
+<p align="center">
+  <img src="assets/method_01.jpg" alt="Result" style="width:100%;">
+</p>
+
+
+
+### 🕒 Note
 Our training  code is currently undergoing internal check of the company. Once it passes, we will open source it. 
 
 Our work can also be reproduced based on our [paper](https://arxiv.org/abs/1).
 
 
----
 
 
-<p align="center">
-   <figcaption style="text-align: center; margin-top: 10px; font-size: 0.92em;">
-           Method overview.
-        </figcaption>
-  <img src="assets/method_01.jpg" alt="Result" style="width:100%;">
-</p>
-
----
-
-
-## 🎀 Highlight
+### 🎀 Highlight
 
 D-OPSD is an on-policy self-distillation training framework for diffusion models especially timestep-distilled ones. It features in:
 
@@ -68,3 +63,13 @@ original few-step inference capability and previous knowledge.
 ---
 
 
+### 🌺 Citation
+If you find D-OPSD useful, please kindly cite our paper:
+```bibtex
+@article{jiang2026dopsd,
+      title={D-OPSD: On-Policy Self-Distillation for Continuously Tuning Step-Distilled Diffusion Models},
+      author={Jiang, Dengyang and Jin, Xin and Liu, Dongyang and Wang, Zanyi and Zheng, Mingzhe and Du, Ruoyi and Yang, Xiangpeng and Wu, Qilong and Li, Zhen and Gao, Peng and Yang, Harry and Hoi, Steven},
+      journal={arXiv preprint arXiv:},
+      year={2026}
+}
+```
