@@ -234,7 +234,7 @@ def main(args):
     if args.use_lora > 1:
         # Set correct lora layers
         target_modules = [
-            "feed_forward.w1"
+            "feed_forward.w1",
             "feed_forward.w2",
             "feed_forward.w3",
             "attention.to_k",
