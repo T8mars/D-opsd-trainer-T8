@@ -26,7 +26,7 @@ pip install -r requirements.txt
 
 ### 🍬 Training 
 
-#### D-OPSD Z-Image-Turbo LoRA training with self-distilled vlm context:
+#### D-OPSD Z-Image-Turbo LoRA training with self-distilled vlm context (align with our paper):
 
 Refer to [ (z-image-turbo_self-distill-vlm)](z-image-turbo_self-distill-vlm/README.md) for training guidance.
 
