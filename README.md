@@ -26,13 +26,23 @@ pip install -r requirements.txt
 
 ### 🍬 Training 
 
-#### D-OPSD Z-Image-Turbo LoRA training with self-distilled vlm context (align with our paper):
+#### 1. D-OPSD Z-Image-Turbo LoRA training with self-distilled vlm context (align with our paper):
 
 Refer to [ (z-image-turbo_self-distill-vlm)](z-image-turbo_self-distill-vlm/README.md) for training guidance.
 
-#### D-OPSD FLUX2-klein LoRA training with self-distilled eidting branch context for scenario of high id accuracy requirement:
+#### 2. D-OPSD FLUX2-klein LoRA training with self-distilled eidting branch context for scenario of high id accuracy requirement:
 
 Refer to [ (flux2-klein_self-distill-edit)](flux2-klein_self-distill-edit/README.md) for training guidance and more discussion.
+
+#### 3. D-OPSD FLUX2-klein LoRA training for image editing with self-distilled target image as reference imgae in teacher:
+
+Refer to [ (flux2-klein_self-distill-edit)](flux2-klein-edit-self-distill-gt-ref/README.md) for training guidance and more discussion.
+
+****
+
+### 🍬 Evaluation
+
+Refer to [ (z-image-turbo_self-distill-vlm-eval)](z-image-turbo_self-distill-vlm/eval/README.md) for evaluation guidance with Z-Image-Turbo and more discussion.
 
 ****
 
