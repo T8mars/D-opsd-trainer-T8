@@ -26,7 +26,7 @@ accelerate launch \
     --batch-size 1 \
     --batch-size-test 1 \
     --gradient-accumulation-steps 1 \
-    --learning-rate-gen 1e-4 \
+    --learning-rate-gen 2e-5 \
     --adam-weight-decay 0.0 \
     --enable-gc \
     --vae-dtype "bf16" \
