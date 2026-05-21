@@ -36,7 +36,7 @@ Refer to [ (flux2-klein_self-distill-edit)](flux2-klein_self-distill-edit/README
 
 #### 3. D-OPSD FLUX2-klein LoRA training for image editing with self-distilled target image as reference imgae in teacher:
 
-Refer to [ (flux2-klein_self-distill-edit)](flux2-klein-edit-self-distill-gt-ref/README.md) for training guidance and more discussion.
+Refer to [ (flux2-klein-edit_self-distill-edit)](flux2-klein-edit-self-distill-gt-ref/README.md) for training guidance and more discussion.
 
 ****
 
