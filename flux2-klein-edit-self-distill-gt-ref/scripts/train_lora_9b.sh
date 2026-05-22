@@ -1,6 +1,6 @@
 CONFIG_FILE="configs/default.yaml"
 MAIN_PORT=60212
-NUM_PROCS=4
+NUM_PROCS=8
 PYTHON_SCRIPT="train_dopsd.py"
 accelerate launch \
     --config_file      ${CONFIG_FILE} \
@@ -9,7 +9,7 @@ accelerate launch \
     ${PYTHON_SCRIPT} \
     --deepspeed-config  "configs/z2.json" \
     --output-dir     "exp_results/" \
-    --exp-name     "dopsd_editcontext_ema0.9999_onpolicy_4steptrain_9b_interaction_bsz4_lora_lr2e-5" \
+    --exp-name     "dopsd_editcontext_ema0.9999_onpolicy_4steptrain_4b_interaction_bsz4_lora_lr2e-5" \
     --sample-steps      100 \
     --checkpoint-steps  500 \
     --epochs              3001 \
@@ -31,8 +31,4 @@ accelerate launch \
     --enable-gc \
     --vae-dtype "bf16" \
     --ema-decay 0.9999 \
-    --edit-sys-prompt "Make the main subject (facial/ip details), background, and overall composition consistent with the reference image." \
-
-
-
-
+    --edit-sys-prompt "Note that the last image is the output image I expect to be. Your output must be as similar as the last reference image, based on the first reference image and the editing instructions." \
