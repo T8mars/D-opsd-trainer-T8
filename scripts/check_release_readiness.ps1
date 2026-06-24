@@ -98,6 +98,100 @@ function Assert-NoTrailingWhitespace {
     Add-Result -Name "Trailing whitespace checks" -Status "passed" -Details ($Files -join ", ")
 }
 
+function Assert-PackagedWorkspaceTemplateFresh {
+    $templateRoot = Join-Path $ProjectRoot "trainer-ui\release\win-unpacked\resources\workspace-template"
+    if (-not (Test-Path -LiteralPath $templateRoot)) {
+        Add-Result -Name "Packaged workspace template freshness" -Status "passed" -Details "No local packaged workspace template present"
+        return
+    }
+
+    function Assert-TemplateFile {
+        param(
+            [string]$RelativePath,
+            [string[]]$MustContain = @(),
+            [string[]]$MustNotContain = @()
+        )
+
+        $file = Join-Path $templateRoot $RelativePath
+        if (-not (Test-Path -LiteralPath $file)) {
+            throw "Packaged workspace template is missing ${RelativePath}"
+        }
+
+        $source = Get-Content -Raw -LiteralPath $file
+        foreach ($needle in $MustContain) {
+            if (-not $source.Contains($needle)) {
+                throw "Packaged workspace template ${RelativePath} is stale; missing expected text: ${needle}"
+            }
+        }
+        foreach ($needle in $MustNotContain) {
+            if ($source.Contains($needle)) {
+                throw "Packaged workspace template ${RelativePath} is stale; found forbidden text: ${needle}"
+            }
+        }
+    }
+
+    foreach ($relativePath in @(
+        "flux2-klein_self-distill-edit\arguments.py",
+        "flux2-klein-edit-self-distill-gt-ref\arguments.py",
+        "z-image-turbo_self-distill-vlm\arguments.py"
+    )) {
+        Assert-TemplateFile -RelativePath $relativePath `
+            -MustContain @('--block-offload-num-blocks", type=int, default=1') `
+            -MustNotContain @('--block-offload-num-blocks", type=int, default=2')
+    }
+
+    foreach ($relativePath in @(
+        "scripts\run_flux2_smoke.sh",
+        "scripts\run_flux2_editing_smoke.sh",
+        "scripts\run_zimage_smoke.sh"
+    )) {
+        Assert-TemplateFile -RelativePath $relativePath `
+            -MustContain @('BLOCK_OFFLOAD_NUM_BLOCKS:-1') `
+            -MustNotContain @('BLOCK_OFFLOAD_NUM_BLOCKS:-2')
+    }
+
+    Assert-TemplateFile -RelativePath "flux2-klein_self-distill-edit\train_dopsd.py" `
+        -MustContain @(
+            '"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload)',
+            '"block_offload": bool(args.block_offload)',
+            '"block_offload_num_blocks": int(args.block_offload_num_blocks)'
+        ) `
+        -MustNotContain @(
+            '"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload),',
+            '"block_offload": False',
+            '"block_offload_num_blocks": 0'
+        )
+
+    Assert-TemplateFile -RelativePath "flux2-klein_self-distill-edit\sample_flux2_final.py" `
+        -MustContain @(
+            'request.get("block_offload_num_blocks", 1)',
+            'request.get("block_offload") and is_cuda_oom(error)',
+            '"block_offload": False',
+            '"final_sampler_cpu_offload": True'
+        ) `
+        -MustNotContain @('request.get("block_offload_num_blocks", 2)')
+
+    Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\cli.py" `
+        -MustContain @('command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)') `
+        -MustNotContain @('command_parser.add_argument("--block-offload-num-blocks", type=int, default=2)')
+
+    Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\recipes.py" `
+        -MustContain @('block_offload_num_blocks: int = 1') `
+        -MustNotContain @('block_offload_num_blocks: int = 2')
+
+    Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\profiles.py" `
+        -MustContain @('"block_offload_num_blocks": 1') `
+        -MustNotContain @('"block_offload_num_blocks": 2')
+
+    foreach ($privateDoc in @("SKILL.md", "skill.md", "roadmap.md", "ROADMAP.md")) {
+        if (Test-Path -LiteralPath (Join-Path $templateRoot $privateDoc)) {
+            throw "Packaged workspace template must not include ${privateDoc}"
+        }
+    }
+
+    Add-Result -Name "Packaged workspace template freshness" -Status "passed" -Details $templateRoot
+}
+
 function Assert-NoWslProcess {
     param(
         [string]$Name,
@@ -156,6 +250,8 @@ Assert-NoTrailingWhitespace -Files @(
     "scripts\check_production_profiles.ps1",
     "trainer_runtime\tests\test_runtime.py"
 )
+
+Assert-PackagedWorkspaceTemplateFresh
 
 Invoke-CheckedCommand -Name "Production profile contract" -FilePath "powershell" -ArgumentList @(
     "-NoProfile",
