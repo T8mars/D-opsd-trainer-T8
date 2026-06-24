@@ -414,6 +414,127 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("最近损失", i18n_source)
         self.assertIn("梯度范数", i18n_source)
 
+    def test_tensorboard_left_nav_and_page_are_declared(self) -> None:
+        shell_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "AppShell.tsx"
+        page_path = PROJECT_ROOT / "trainer-ui" / "src" / "app" / "tensorboard" / "page.tsx"
+        i18n_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx"
+
+        shell_source = shell_path.read_text(encoding="utf-8")
+        self.assertIn("'/tensorboard'", shell_source)
+        self.assertIn("navTensorBoard", shell_source)
+        self.assertTrue(page_path.exists(), "TensorBoard page should exist")
+        self.assertIn("TensorBoardConsole", page_path.read_text(encoding="utf-8"))
+
+        i18n_source = i18n_path.read_text(encoding="utf-8")
+        for text in (
+            "TensorBoard",
+            "训练 LOSS 曲线",
+            "多运行对比",
+            "平滑",
+            "对数轴",
+            "自动刷新",
+        ):
+            self.assertIn(text, i18n_source)
+
+    def test_tensorboard_api_discovers_runs_and_scalars(self) -> None:
+        lib_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "tensorboard.ts"
+        runs_route_path = PROJECT_ROOT / "trainer-ui" / "src" / "app" / "api" / "tensorboard" / "runs" / "route.ts"
+        scalars_route_path = PROJECT_ROOT / "trainer-ui" / "src" / "app" / "api" / "tensorboard" / "scalars" / "route.ts"
+
+        self.assertTrue(lib_path.exists(), "TensorBoard data library should exist")
+        self.assertTrue(runs_route_path.exists(), "TensorBoard runs API should exist")
+        self.assertTrue(scalars_route_path.exists(), "TensorBoard scalars API should exist")
+
+        lib_source = lib_path.read_text(encoding="utf-8")
+        for token in (
+            "discoverTensorboardRuns",
+            "readScalarSeries",
+            "loss_log/loss_gen_log.jsonl",
+            "trainer-data/runs",
+            "trainer-data/smoke-runs",
+            "metricKeys",
+            "stride",
+            "smooth",
+            "path.relative",
+            "lossTotal",
+            "lossDopsd",
+            "gradNorm",
+        ):
+            self.assertIn(token, lib_source)
+
+        self.assertIn("discoverTensorboardRuns", runs_route_path.read_text(encoding="utf-8"))
+        scalars_source = scalars_route_path.read_text(encoding="utf-8")
+        self.assertIn("readScalarSeries", scalars_source)
+        self.assertIn("runIds", scalars_source)
+        self.assertIn("metrics", scalars_source)
+
+    def test_tensorboard_console_renders_professional_loss_controls(self) -> None:
+        console_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "TensorBoardConsole.tsx"
+        self.assertTrue(console_path.exists(), "TensorBoard console should exist")
+        source = console_path.read_text(encoding="utf-8")
+
+        for token in (
+            "'use client'",
+            "selectedRunIds",
+            "selectedMetrics",
+            "smoothing",
+            "logScale",
+            "autoRefresh",
+            "lossTotal",
+            "lossDopsd",
+            "gradNorm",
+            "polyline",
+            "<svg",
+            "tensorboardCompareRuns",
+            "tensorboardLatestLoss",
+            "tensorboardBestLoss",
+            "tensorboardLatestStep",
+            "tensorboardTrend",
+        ):
+            self.assertIn(token, source)
+
+    def test_training_scripts_write_tensorboard_events(self) -> None:
+        recipes = (
+            "flux2-klein_self-distill-edit",
+            "flux2-klein-edit-self-distill-gt-ref",
+            "z-image-turbo_self-distill-vlm",
+        )
+        for relative in recipes:
+            with self.subTest(relative=relative):
+                args_source = (PROJECT_ROOT / relative / "arguments.py").read_text(encoding="utf-8")
+                train_source = (PROJECT_ROOT / relative / "train_dopsd.py").read_text(encoding="utf-8")
+
+                self.assertIn("--tensorboard", args_source)
+                self.assertIn("--tensorboard-dir", args_source)
+                self.assertIn("SummaryWriter", train_source)
+                self.assertIn("create_tensorboard_writer", train_source)
+                self.assertIn('add_scalar("loss/total"', train_source)
+                self.assertIn('add_scalar("loss/dopsd"', train_source)
+                self.assertIn('add_scalar("train/grad_norm"', train_source)
+                self.assertIn("tb_writer.close()", train_source)
+
+        for relative in (
+            "scripts/run_flux2_smoke.sh",
+            "scripts/run_flux2_editing_smoke.sh",
+            "scripts/run_zimage_smoke.sh",
+        ):
+            with self.subTest(relative=relative):
+                source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('TENSORBOARD="${TENSORBOARD:-1}"', source)
+                self.assertIn('TENSORBOARD_DIR="${TENSORBOARD_DIR:-tensorboard}"', source)
+                self.assertIn("TRAIN_ARGS+=(--tensorboard --tensorboard-dir \"$TENSORBOARD_DIR\")", source)
+                self.assertIn("TRAIN_ARGS+=(--no-tensorboard)", source)
+
+    def test_ui_smoke_includes_tensorboard_page(self) -> None:
+        smoke_path = PROJECT_ROOT / "scripts" / "check_ui_smoke.ps1"
+        source = smoke_path.read_text(encoding="utf-8")
+
+        self.assertIn("/api/tensorboard/runs", source)
+        self.assertIn("/tensorboard", source)
+        self.assertIn("TensorBoard", source)
+        self.assertIn("LOSS", source)
+        self.assertIn("PagesChecked", source)
+
     def test_detached_wsl_runner_does_not_wait_on_empty_pid(self) -> None:
         jobs_lib_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts"
         jobs_lib_source = jobs_lib_path.read_text(encoding="utf-8")

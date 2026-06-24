@@ -57,6 +57,32 @@ def create_logger(logging_dir):
     return logger
 
 
+def create_tensorboard_writer(save_dir, args, logger):
+    if not getattr(args, "tensorboard", True):
+        return None
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+    except Exception as error:
+        logger.warning(f"TensorBoard disabled: {error}")
+        return None
+    tensorboard_dir = getattr(args, "tensorboard_dir", "tensorboard")
+    if not os.path.isabs(tensorboard_dir):
+        tensorboard_dir = os.path.join(save_dir, tensorboard_dir)
+    os.makedirs(tensorboard_dir, exist_ok=True)
+    logger.info(f"TensorBoard logs: {tensorboard_dir}")
+    return SummaryWriter(tensorboard_dir)
+
+
+def write_tensorboard_scalars(tb_writer, logs, global_step):
+    if tb_writer is None:
+        return
+    tb_writer.add_scalar("loss/total", float(logs.get("loss_total", 0.0)), global_step)
+    tb_writer.add_scalar("loss/dopsd", float(logs.get("loss_dopsd", 0.0)), global_step)
+    tb_writer.add_scalar("train/grad_norm", float(logs.get("grad_n", 0.0)), global_step)
+    tb_writer.add_scalar("train/epoch", float(logs.get("epoch", 0.0)), global_step)
+    tb_writer.flush()
+
+
 def unwrap_model(model, accelerator):
     model = accelerator.unwrap_model(model)
     model = model._orig_mod if is_compiled_module(model) else model
@@ -529,6 +555,7 @@ def main(args):
     checkpoint_dir = f"{save_dir}/checkpoints"  # Stores saved model checkpoints
     os.makedirs(checkpoint_dir, exist_ok=True)
     logger = get_logger(__name__)
+    tb_writer = None
 
     if accelerator.is_main_process:
         args_dict = vars(args)
@@ -539,6 +566,7 @@ def main(args):
 
         logger = create_logger(save_dir)
         logger.info(f"Experiment directory created at {save_dir}")
+        tb_writer = create_tensorboard_writer(save_dir, args, logger)
 
     if torch.backends.mps.is_available():
         accelerator.native_amp = False
@@ -1056,6 +1084,7 @@ def main(args):
                     if accelerator.is_main_process:
                         with open(log_gen, "a") as f_log_gen:
                             f_log_gen.write(f"{json.dumps(logs)}\n")
+                        write_tensorboard_scalars(tb_writer, logs, global_step)
 
                     # save model
                     if args.save_checkpoints and (global_step % args.checkpoint_steps == 0 or global_step == args.max_train_steps):
@@ -1220,6 +1249,9 @@ def main(args):
         if torch.cuda.is_available():
             torch.cuda.ipc_collect()
         gc.collect()
+
+    if tb_writer is not None:
+        tb_writer.close()
 
     accelerator.end_training()
 

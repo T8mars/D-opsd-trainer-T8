@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Archive, Copy, FileText, FolderOpen, Play, Plus, RefreshCw, ScrollText, Square, Trash2 } from 'lucide-react';
+import { Activity, AlertTriangle, Archive, Copy, FileText, FolderOpen, LineChart, Play, Plus, RefreshCw, ScrollText, Square, Trash2 } from 'lucide-react';
 import StatusPill from '@/components/StatusPill';
 import { useI18n, type MessageKey } from '@/lib/i18n';
 import type { ArtifactEntry, JobSummary, JobStatus } from '@/lib/jobs';
@@ -619,6 +620,13 @@ export default function JobsTable() {
                     {artifactLabel(job.artifacts.checkpoints, `${t('ckptShort')} ${job.artifactCounts.checkpoints}`)}
                   </div>
                   <LossBars job={job} />
+                  <Link
+                    href="/tensorboard"
+                    className="inline-flex items-center gap-2 rounded-md border border-aqua-500/25 bg-aqua-500/[0.1] px-3 py-2 text-xs text-aqua-300 transition hover:bg-aqua-500/[0.16]"
+                  >
+                    <LineChart className="h-3.5 w-3.5" />
+                    {t('tensorboardOpenFullLoss')}
+                  </Link>
                   <LossHistorySummary job={job} />
                   <ArtifactBrowser job={job} />
                   <div className="rounded-md bg-black/25 p-2 font-mono text-xs leading-5 text-ink-400">

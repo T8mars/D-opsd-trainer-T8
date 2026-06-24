@@ -39,6 +39,25 @@
       ]
     },
     {
+      "id": "tensorboard-loss-workbench",
+      "name": "TensorBoard loss workbench",
+      "status": "verified",
+      "scope": "Provide a left-navigation TensorBoard page for professional LOSS curves, run comparison, smoothing, log scale, TensorBoard event status, and JSONL scalar APIs.",
+      "evidence": [
+        "trainer-ui/src/lib/tensorboard.ts discovers runs from the jobs ledger, trainer-data/runs, and trainer-data/smoke-runs without mutating job queue state, then serves safe project-root-scoped scalar series through /api/tensorboard/runs and /api/tensorboard/scalars",
+        "trainer-ui/src/components/AppShell.tsx adds the left TensorBoard navigation item and trainer-ui/src/app/tensorboard/page.tsx renders TensorBoardConsole with Chinese-first i18n copy",
+        "TensorBoardConsole provides run selection, metric selection for total LOSS / D-OPSD LOSS / gradient norm, smoothing, log scale, auto refresh, multi-run comparison, SVG polylines, summary cards, event file counts, and a selected-run table",
+        "JobsTable now links from each job's compact loss area to the full TensorBoard curve workbench",
+        "The three D-OPSD training recipes expose --tensorboard and --tensorboard-dir, safely create torch.utils.tensorboard SummaryWriter only on the main process, write loss/total, loss/dopsd, train/grad_norm, and train/epoch scalars each step, and close the writer before training exits",
+        "requirements-trainer.txt now includes tensorboard==2.20.0 and the existing WSL trainer venv installed it successfully; python -m pip check returned No broken requirements found",
+        "scripts/run_flux2_smoke.sh, scripts/run_flux2_editing_smoke.sh, and scripts/run_zimage_smoke.sh default TENSORBOARD=1, pass --tensorboard --tensorboard-dir tensorboard, and allow TENSORBOARD=0 to keep JSONL-only runs",
+        "README.md now documents the left TensorBoard page, JSONL source path, TensorBoard event file path, external tensorboard --logdir usage, and TENSORBOARD=0 opt-out",
+        "Verification passed: the five targeted TensorBoard runtime tests passed, python -m unittest discover -s trainer_runtime\\tests -v ran 97 tests OK, npm run typecheck --prefix trainer-ui passed, python JSON validation passed for features.json and meta.json, git diff --check passed, and scripts/check_ui_smoke.ps1 against http://127.0.0.1:8675 returned Ok true with PagesChecked 7 and TensorboardRuns 96",
+        "Real WSL FLUX2 Identity TensorBoard smoke passed: EXP_NAME=tensorboard_event_smoke_ with MAX_TRAIN_STEPS=1, SAVE_SAMPLES=0, SAVE_CHECKPOINTS=0, SKIP_INITIAL_SAMPLE=1, TENSORBOARD=1, and RESOLUTION_SCALE=0.25 completed with loss_total 1.9372780323028564; loss_log/loss_gen_log.jsonl contains one scalar row, tensorboard/events.out.tfevents.* exists with one event file, /api/tensorboard/runs reports EventFiles 1 and PointCount 1 for the run, and /api/tensorboard/scalars returns three metric series with three points total",
+        "Post-smoke process check found no train_dopsd, accelerate, deepspeed, or runner.sh training process; nvidia-smi reported 6735 MiB / 16380 MiB used and 0% GPU utilization after the smoke exited"
+      ]
+    },
+    {
       "id": "windows-ui-launcher",
       "name": "Windows UI launcher",
       "status": "verified",

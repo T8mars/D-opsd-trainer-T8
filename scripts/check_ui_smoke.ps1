@@ -76,6 +76,11 @@ if (-not $jobs.ok) {
     throw "/api/jobs returned ok=false"
 }
 
+$tensorboard = Invoke-Json -Uri (Join-Url -Root $BaseUrl -Path "/api/tensorboard/runs")
+if (-not $tensorboard.ok) {
+    throw "/api/tensorboard/runs returned ok=false"
+}
+
 $settings = Invoke-Json -Uri (Join-Url -Root $BaseUrl -Path "/api/settings")
 if (-not $settings.ok) {
     throw "/api/settings returned ok=false"
@@ -110,6 +115,7 @@ $zhCommandPreview = ConvertFrom-Utf8Base64 "5ZG95Luk6aKE6KeI"
 $zhDatasetBlocked = ConvertFrom-Utf8Base64 "5pWw5o2u6ZuG6Zi75aGe"
 $zhDurableJobLedger = ConvertFrom-Utf8Base64 "5oyB5LmF5Lu75Yqh6LSm5pys"
 $zhJobLedger = ConvertFrom-Utf8Base64 "5Lu75Yqh6LSm5pys"
+$zhTrainingLossCurve = ConvertFrom-Utf8Base64 "6K6t57uDIExPU1Mg5puy57q/"
 $zhGpuTelemetry = ConvertFrom-Utf8Base64 "R1BVIOmBpea1iw=="
 $zhRuntimePaths = ConvertFrom-Utf8Base64 "6L+Q6KGM5pe26Lev5b6E"
 $zhDatasetValidator = ConvertFrom-Utf8Base64 "5pWw5o2u6ZuG6aqM6K+B5Zmo"
@@ -127,6 +133,7 @@ $pages = @(
     @{ Path = "/"; Required = @($brandTitle, $zhNewTraining, $zhDashboard, $zhJobs, $zhDatasets, $zhModels, $zhSettings, $zhChinese, "EN") },
     @{ Path = "/jobs/new"; Required = @($zhNewTraining, $zhPairPreflight, $zhCreateDraft, $zhMultiDatasetSelection, $zhCreateDraftFromMerged, $zhDatasetWeight, $zhMemoryLaunch, $zhLowVramOffload, $zhRecommended16gb, $zhSampleScale, $zhSamplePrompts, $zhCommandPreview, $zhDatasetBlocked) },
     @{ Path = "/jobs"; Required = @($zhJobs, $zhDurableJobLedger, $zhGpuTelemetry, $zhJobLedger) },
+    @{ Path = "/tensorboard"; Required = @("TensorBoard", "LOSS", $zhTrainingLossCurve) },
     @{ Path = "/datasets"; Required = @($zhDatasets, "D-OPSD JSONL", $zhDatasetValidator, $zhDatasetPath, $zhImportDataset, $zhUploadImages, $zhCaptionFile, $zhMultiDatasetSelection, $zhCreateDraftFromMerged) },
     @{ Path = "/models"; Required = @($zhModels, "Hugging Face", $zhModelCache, $zhCustomModelPath, $zhOpenFolder) },
     @{ Path = "/settings"; Required = @($zhSettings, $zhRuntimePaths) }
@@ -169,6 +176,7 @@ foreach ($asset in $cssAssets) {
     CssAssets = $cssChecked
     DefaultModelsCached = $defaultModelsCached
     Jobs = @($jobs.jobs).Count
+    TensorboardRuns = @($tensorboard.runs).Count
     Datasets = @($datasets.datasets).Count
     DatasetReady = $datasetReadyCount
 } | Format-List

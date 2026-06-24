@@ -11,6 +11,10 @@ def parse_args():
     # logging:
     parser.add_argument("--output-dir", type=str, default="dopsd-exps")
     parser.add_argument("--logging-dir", type=str, default="logs")
+    parser.add_argument("--tensorboard", action=argparse.BooleanOptionalAction, default=True,
+                        help="Write TensorBoard scalar event files next to the JSONL loss log.")
+    parser.add_argument("--tensorboard-dir", type=str, default="tensorboard",
+                        help="TensorBoard event directory, relative to the experiment output folder unless absolute.")
 
     parser.add_argument("--exp-name", type=str, required=True)
     parser.add_argument("--sample-steps", type=int, default=2000)

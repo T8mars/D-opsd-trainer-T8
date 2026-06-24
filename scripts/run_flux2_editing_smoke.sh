@@ -31,6 +31,8 @@ LAYER_OFFLOAD_TEXT_ENCODER_PERCENT="${LAYER_OFFLOAD_TEXT_ENCODER_PERCENT:-1.0}"
 MAIN_PORT="${MAIN_PORT:-60251}"
 SAVE_SAMPLES="${SAVE_SAMPLES:-0}"
 SAVE_CHECKPOINTS="${SAVE_CHECKPOINTS:-0}"
+TENSORBOARD="${TENSORBOARD:-1}"
+TENSORBOARD_DIR="${TENSORBOARD_DIR:-tensorboard}"
 SAMPLE_STEPS="${SAMPLE_STEPS:-999}"
 CHECKPOINT_STEPS="${CHECKPOINT_STEPS:-999}"
 MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-1}"
@@ -117,6 +119,12 @@ if is_truthy "$SAVE_CHECKPOINTS"; then
   TRAIN_ARGS+=(--save-checkpoints)
 else
   TRAIN_ARGS+=(--no-save-checkpoints)
+fi
+
+if is_truthy "$TENSORBOARD"; then
+  TRAIN_ARGS+=(--tensorboard --tensorboard-dir "$TENSORBOARD_DIR")
+else
+  TRAIN_ARGS+=(--no-tensorboard)
 fi
 
 if [[ "${BLOCK_OFFLOAD:-0}" == "1" || "${BLOCK_OFFLOAD:-}" == "true" ]]; then
