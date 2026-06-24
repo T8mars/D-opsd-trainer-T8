@@ -22,6 +22,7 @@ import math
 from torchvision.utils import make_grid
 from dataset import TextImageDataset, AspectBatchSampler, CustomDataLoader, parse_ratios
 from dataset_validate import TextPromptDataset
+from dopsd_layer_offload import attach_layer_offload
 from local_paths import resolve_existing_path
 from PIL import Image
 from arguments import parse_args
@@ -571,6 +572,15 @@ def main(args):
     # disable progress bar for cold start
     pipeline.set_progress_bar_config(disable=True)
 
+    if args.layer_offload and args.layer_offload_transformer_percent > 0:
+        attach_layer_offload(
+            pipeline.transformer,
+            accelerator.device,
+            args.layer_offload_transformer_percent,
+            logger,
+            label="transformer",
+        )
+
     # init lora
     if args.use_lora > 1:
         # Set correct lora layers
@@ -611,6 +621,14 @@ def main(args):
         pipeline.vae.to(accelerator.device, dtype=vae_dtype)
     # avoid OOM in both inline sample generation and training VAE paths
     configure_tiled_vae(pipeline.vae, args, logger)
+    if args.layer_offload and args.layer_offload_text_encoder_percent > 0:
+        attach_layer_offload(
+            pipeline.text_encoder,
+            accelerator.device,
+            args.layer_offload_text_encoder_percent,
+            logger,
+            label="text encoder",
+        )
     pipeline.text_encoder.to(accelerator.device, dtype=inference_dtype)
 
     gen_model = pipeline.transformer
@@ -732,6 +750,8 @@ def main(args):
             logger.info("Low VRAM mode enabled: frozen VAE/text encoder offload between batches")
         if args.block_offload:
             logger.info("Transformer block offload requested for final sampling only")
+        if args.layer_offload:
+            logger.info("AI Toolkit-style layer offloading enabled for training-time transformer/text encoder")
         if not args.save_samples:
             logger.info("Sample generation disabled")
         logger.info(

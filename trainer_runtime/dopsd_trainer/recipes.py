@@ -104,6 +104,9 @@ class TrainingConfig:
     low_vram: bool = False
     block_offload: bool = False
     block_offload_num_blocks: int = 1
+    layer_offload: bool = False
+    layer_offload_transformer_percent: float = 1.0
+    layer_offload_text_encoder_percent: float = 1.0
     resolution_scale: str | None = None
     save_samples: bool = True
     save_checkpoints: bool = True
@@ -115,6 +118,10 @@ class TrainingConfig:
 
 def recipe_as_dict(recipe_id: str) -> dict[str, Any]:
     return asdict(RECIPE_REGISTRY[recipe_id])
+
+
+def _percent_arg(value: float) -> str:
+    return str(max(0.0, min(1.0, float(value))))
 
 
 def build_accelerate_command(config: TrainingConfig, project_root: str | Path | None = None) -> dict[str, Any]:
@@ -222,6 +229,14 @@ def build_accelerate_command(config: TrainingConfig, project_root: str | Path | 
         args.append("--low-vram")
     if config.block_offload:
         args.extend(["--block-offload", "--block-offload-num-blocks", str(max(1, int(config.block_offload_num_blocks)))])
+    if config.layer_offload:
+        args.extend([
+            "--layer-offload",
+            "--layer-offload-transformer-percent",
+            _percent_arg(config.layer_offload_transformer_percent),
+            "--layer-offload-text-encoder-percent",
+            _percent_arg(config.layer_offload_text_encoder_percent),
+        ])
     if config.resolution_scale:
         args.extend(["--resolution-scale", config.resolution_scale])
     if not config.save_samples:

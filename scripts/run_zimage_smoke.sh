@@ -26,6 +26,9 @@ RESOLUTION_SCALE="${RESOLUTION_SCALE:-0.25}"
 LAUNCHER="${LAUNCHER:-python}"
 LOW_VRAM="${LOW_VRAM:-1}"
 USE_8BIT_ADAM="${USE_8BIT_ADAM:-1}"
+LAYER_OFFLOAD="${LAYER_OFFLOAD:-0}"
+LAYER_OFFLOAD_TRANSFORMER_PERCENT="${LAYER_OFFLOAD_TRANSFORMER_PERCENT:-1.0}"
+LAYER_OFFLOAD_TEXT_ENCODER_PERCENT="${LAYER_OFFLOAD_TEXT_ENCODER_PERCENT:-1.0}"
 MAIN_PORT="${MAIN_PORT:-60241}"
 SAVE_SAMPLES="${SAVE_SAMPLES:-0}"
 SAVE_CHECKPOINTS="${SAVE_CHECKPOINTS:-0}"
@@ -117,6 +120,13 @@ fi
 
 if [[ "${BLOCK_OFFLOAD:-0}" == "1" || "${BLOCK_OFFLOAD:-}" == "true" ]]; then
   TRAIN_ARGS+=(--block-offload --block-offload-num-blocks "${BLOCK_OFFLOAD_NUM_BLOCKS:-1}")
+fi
+
+if is_truthy "$LAYER_OFFLOAD"; then
+  TRAIN_ARGS+=(--layer-offload
+    --layer-offload-transformer-percent "$LAYER_OFFLOAD_TRANSFORMER_PERCENT"
+    --layer-offload-text-encoder-percent "$LAYER_OFFLOAD_TEXT_ENCODER_PERCENT"
+  )
 fi
 
 if [[ "$LAUNCHER" == "accelerate" ]]; then

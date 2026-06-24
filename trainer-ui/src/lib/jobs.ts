@@ -39,6 +39,9 @@ export type TrainerJob = {
   use8bitAdam: boolean;
   blockOffload?: boolean;
   blockOffloadNumBlocks?: number;
+  layerOffload?: boolean;
+  layerOffloadTransformerPercent?: number;
+  layerOffloadTextEncoderPercent?: number;
   trainingConfig?: TrainingOverridesV2;
   saveSamples: boolean;
   saveCheckpoints: boolean;
@@ -309,6 +312,9 @@ function profileEnvAssignments(
     `USE_8BIT_ADAM=${values.use8bitAdam ? '1' : '0'}`,
     `BLOCK_OFFLOAD=${values.blockOffload ? '1' : '0'}`,
     `BLOCK_OFFLOAD_NUM_BLOCKS=${values.blockOffloadNumBlocks}`,
+    `LAYER_OFFLOAD=${values.layerOffload ? '1' : '0'}`,
+    `LAYER_OFFLOAD_TRANSFORMER_PERCENT=${values.layerOffloadTransformerPercent}`,
+    `LAYER_OFFLOAD_TEXT_ENCODER_PERCENT=${values.layerOffloadTextEncoderPercent}`,
   ].filter(Boolean).join(' ');
 }
 
@@ -465,6 +471,9 @@ function defaultTrainingValues(recipeId: RecipeId, profile?: RecipeProductionPro
     use8bitAdam: overrides?.use8bitAdam ?? Boolean(profile),
     blockOffload: overrides?.blockOffload ?? profile?.blockOffload ?? false,
     blockOffloadNumBlocks: overrides?.blockOffloadNumBlocks ?? 1,
+    layerOffload: overrides?.layerOffload ?? false,
+    layerOffloadTransformerPercent: overrides?.layerOffloadTransformerPercent ?? 1,
+    layerOffloadTextEncoderPercent: overrides?.layerOffloadTextEncoderPercent ?? 1,
   };
 }
 
@@ -780,6 +789,9 @@ export async function createDraftJob(
     use8bitAdam: trainingValues.use8bitAdam,
     blockOffload: trainingValues.blockOffload,
     blockOffloadNumBlocks: trainingValues.blockOffloadNumBlocks,
+    layerOffload: trainingValues.layerOffload,
+    layerOffloadTransformerPercent: trainingValues.layerOffloadTransformerPercent,
+    layerOffloadTextEncoderPercent: trainingValues.layerOffloadTextEncoderPercent,
     trainingConfig,
     saveSamples: trainingValues.saveSamples,
     saveCheckpoints: trainingValues.saveCheckpoints,

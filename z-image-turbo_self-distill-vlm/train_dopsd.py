@@ -23,6 +23,7 @@ import math
 from torchvision.utils import make_grid
 from dataset import TextImageDataset, AspectBatchSampler, CustomDataLoader, parse_ratios
 from dataset_validate import TextPromptDataset
+from dopsd_layer_offload import attach_layer_offload
 from local_paths import resolve_existing_path
 from PIL import Image
 from arguments import parse_args
@@ -392,6 +393,24 @@ def main(args):
     # disable progress bar for cold start
     pipeline.set_progress_bar_config(disable=True)
 
+    if args.layer_offload and args.layer_offload_transformer_percent > 0:
+        zimage_ignore_modules = [
+            module
+            for module in (
+                getattr(pipeline.transformer, "x_pad_token", None),
+                getattr(pipeline.transformer, "cap_pad_token", None),
+            )
+            if module is not None
+        ]
+        attach_layer_offload(
+            pipeline.transformer,
+            accelerator.device,
+            args.layer_offload_transformer_percent,
+            logger,
+            label="transformer",
+            ignore_modules=zimage_ignore_modules,
+        )
+
     # init lora
     if args.use_lora > 1:
         # Set correct lora layers
@@ -425,12 +444,22 @@ def main(args):
         vae_dtype = inference_dtype
     # avoid OOM
     pipeline.vae.enable_slicing()
+    if args.layer_offload and args.layer_offload_text_encoder_percent > 0:
+        attach_layer_offload(
+            pipeline.text_encoder,
+            accelerator.device,
+            args.layer_offload_text_encoder_percent,
+            logger,
+            label="text encoder",
+        )
     if args.low_vram:
         pipeline.vae.to("cpu", dtype=vae_dtype)
         pipeline.text_encoder.to("cpu", dtype=inference_dtype)
         free_cuda_memory()
         if accelerator.is_main_process:
             logger.info("Low VRAM mode enabled: frozen VAE/text encoder/VLM offload to CPU.")
+    if args.layer_offload and accelerator.is_main_process:
+        logger.info("AI Toolkit-style layer offloading enabled for training-time transformer/text encoder")
     else:
         pipeline.vae.to(accelerator.device, dtype=vae_dtype)
         pipeline.text_encoder.to(accelerator.device, dtype=inference_dtype)

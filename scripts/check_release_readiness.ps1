@@ -136,7 +136,11 @@ function Assert-PackagedWorkspaceTemplateFresh {
         "z-image-turbo_self-distill-vlm\arguments.py"
     )) {
         Assert-TemplateFile -RelativePath $relativePath `
-            -MustContain @('--block-offload-num-blocks", type=int, default=1') `
+            -MustContain @(
+                '--block-offload-num-blocks", type=int, default=1',
+                '--layer-offload-transformer-percent", type=float, default=1.0',
+                '--layer-offload-text-encoder-percent", type=float, default=1.0'
+            ) `
             -MustNotContain @('--block-offload-num-blocks", type=int, default=2')
     }
 
@@ -146,7 +150,11 @@ function Assert-PackagedWorkspaceTemplateFresh {
         "scripts\run_zimage_smoke.sh"
     )) {
         Assert-TemplateFile -RelativePath $relativePath `
-            -MustContain @('BLOCK_OFFLOAD_NUM_BLOCKS:-1') `
+            -MustContain @(
+                'BLOCK_OFFLOAD_NUM_BLOCKS:-1',
+                'LAYER_OFFLOAD_TRANSFORMER_PERCENT:-1.0',
+                'LAYER_OFFLOAD_TEXT_ENCODER_PERCENT:-1.0'
+            ) `
             -MustNotContain @('BLOCK_OFFLOAD_NUM_BLOCKS:-2')
     }
 
@@ -154,7 +162,9 @@ function Assert-PackagedWorkspaceTemplateFresh {
         -MustContain @(
             '"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload)',
             '"block_offload": bool(args.block_offload)',
-            '"block_offload_num_blocks": int(args.block_offload_num_blocks)'
+            '"block_offload_num_blocks": int(args.block_offload_num_blocks)',
+            'attach_layer_offload(',
+            'AI Toolkit-style layer offloading enabled'
         ) `
         -MustNotContain @(
             '"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload),',
@@ -172,11 +182,17 @@ function Assert-PackagedWorkspaceTemplateFresh {
         -MustNotContain @('request.get("block_offload_num_blocks", 2)')
 
     Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\cli.py" `
-        -MustContain @('command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)') `
+        -MustContain @(
+            'command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)',
+            'command_parser.add_argument("--layer-offload-transformer-percent", type=float, default=1.0)'
+        ) `
         -MustNotContain @('command_parser.add_argument("--block-offload-num-blocks", type=int, default=2)')
 
     Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\recipes.py" `
-        -MustContain @('block_offload_num_blocks: int = 1') `
+        -MustContain @(
+            'block_offload_num_blocks: int = 1',
+            'layer_offload_transformer_percent: float = 1.0'
+        ) `
         -MustNotContain @('block_offload_num_blocks: int = 2')
 
     Assert-TemplateFile -RelativePath "trainer_runtime\dopsd_trainer\profiles.py" `

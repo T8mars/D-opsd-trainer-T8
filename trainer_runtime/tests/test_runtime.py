@@ -560,11 +560,44 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(command["args"][block_index + 1], "1")
         self.assertIn("--block-offload --block-offload-num-blocks 1", command["display"])
 
+    def test_recipe_command_can_enable_ai_toolkit_layer_offloading(self) -> None:
+        command = build_accelerate_command(
+            TrainingConfig(
+                recipe_id="flux2-klein-identity",
+                exp_name="layer_offload_smoke",
+                launcher="python",
+                use_deepspeed=False,
+                low_vram=True,
+                layer_offload=True,
+                layer_offload_transformer_percent=0.5,
+                layer_offload_text_encoder_percent=1.0,
+                prefer_local_models=False,
+            ),
+            PROJECT_ROOT,
+        )
+
+        self.assertIn("--layer-offload", command["args"])
+        transformer_index = command["args"].index("--layer-offload-transformer-percent")
+        text_encoder_index = command["args"].index("--layer-offload-text-encoder-percent")
+        self.assertEqual(command["args"][transformer_index + 1], "0.5")
+        self.assertEqual(command["args"][text_encoder_index + 1], "1.0")
+        self.assertIn("--layer-offload --layer-offload-transformer-percent 0.5", command["display"])
+
     def test_build_command_cli_defaults_block_offload_to_one_block(self) -> None:
         cli_source = (PROJECT_ROOT / "trainer_runtime" / "dopsd_trainer" / "cli.py").read_text(encoding="utf-8")
 
         self.assertIn('command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)', cli_source)
         self.assertNotIn('command_parser.add_argument("--block-offload-num-blocks", type=int, default=2)', cli_source)
+
+    def test_build_command_cli_surfaces_layer_offload_flags(self) -> None:
+        cli_source = (PROJECT_ROOT / "trainer_runtime" / "dopsd_trainer" / "cli.py").read_text(encoding="utf-8")
+
+        self.assertIn('command_parser.add_argument("--layer-offload", action="store_true")', cli_source)
+        self.assertIn('command_parser.add_argument("--layer-offload-transformer-percent", type=float, default=1.0)', cli_source)
+        self.assertIn('command_parser.add_argument("--layer-offload-text-encoder-percent", type=float, default=1.0)', cli_source)
+        self.assertIn("layer_offload=args.layer_offload", cli_source)
+        self.assertIn("layer_offload_transformer_percent=args.layer_offload_transformer_percent", cli_source)
+        self.assertIn("layer_offload_text_encoder_percent=args.layer_offload_text_encoder_percent", cli_source)
 
     def test_dopsd_training_scripts_expose_diffusers_group_block_offload(self) -> None:
         for relative in (
@@ -583,6 +616,38 @@ class RuntimeTests(unittest.TestCase):
                 self.assertIn('offload_type="block_level"', train_source)
                 self.assertIn("Transformer block offload requested for final sampling only", train_source)
                 self.assertIn("if args.block_offload and global_step == args.max_train_steps", train_source)
+
+    def test_dopsd_training_scripts_expose_ai_toolkit_layer_offloading(self) -> None:
+        for relative in (
+            "flux2-klein_self-distill-edit",
+            "flux2-klein-edit-self-distill-gt-ref",
+            "z-image-turbo_self-distill-vlm",
+        ):
+            with self.subTest(relative=relative):
+                args_source = (PROJECT_ROOT / relative / "arguments.py").read_text(encoding="utf-8")
+                train_source = (PROJECT_ROOT / relative / "train_dopsd.py").read_text(encoding="utf-8")
+
+                self.assertIn("--layer-offload", args_source)
+                self.assertIn("--layer-offload-transformer-percent", args_source)
+                self.assertIn("--layer-offload-text-encoder-percent", args_source)
+                self.assertIn("from dopsd_layer_offload import attach_layer_offload", train_source)
+                self.assertIn("attach_layer_offload(", train_source)
+                self.assertIn("args.layer_offload_transformer_percent", train_source)
+                self.assertIn("args.layer_offload_text_encoder_percent", train_source)
+                self.assertIn("AI Toolkit-style layer offloading enabled", train_source)
+
+    def test_memory_manager_backward_aligns_grad_dtype_to_staged_weight(self) -> None:
+        source = (
+            PROJECT_ROOT
+            / "trainer_runtime"
+            / "dopsd_trainer"
+            / "memory_management"
+            / "manager_modules.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("def _grad_input_dtype(weight: torch.Tensor, fallback: torch.dtype) -> torch.dtype:", source)
+        self.assertIn("grad_out.to(dtype=_grad_input_dtype(w_bwd, target_dtype)) @ w_bwd", source)
+        self.assertIn("grad_out.to(dtype=_grad_input_dtype(w_bwd, target_dtype))", source)
 
     def test_flux2_block_offload_is_enabled_after_pipeline_device_prepare(self) -> None:
         for relative in (
@@ -951,6 +1016,22 @@ class RuntimeTests(unittest.TestCase):
                 self.assertIn('MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-1}"', source)
                 self.assertIn('--max-train-steps "$MAX_TRAIN_STEPS"', source)
 
+    def test_smoke_scripts_forward_layer_offload_env(self) -> None:
+        for script_name in (
+            "run_flux2_smoke.sh",
+            "run_flux2_editing_smoke.sh",
+            "run_zimage_smoke.sh",
+        ):
+            with self.subTest(script_name=script_name):
+                source = (PROJECT_ROOT / "scripts" / script_name).read_text(encoding="utf-8")
+
+                self.assertIn('LAYER_OFFLOAD="${LAYER_OFFLOAD:-0}"', source)
+                self.assertIn('LAYER_OFFLOAD_TRANSFORMER_PERCENT="${LAYER_OFFLOAD_TRANSFORMER_PERCENT:-1.0}"', source)
+                self.assertIn('LAYER_OFFLOAD_TEXT_ENCODER_PERCENT="${LAYER_OFFLOAD_TEXT_ENCODER_PERCENT:-1.0}"', source)
+                self.assertIn('TRAIN_ARGS+=(--layer-offload', source)
+                self.assertIn('--layer-offload-transformer-percent "$LAYER_OFFLOAD_TRANSFORMER_PERCENT"', source)
+                self.assertIn('--layer-offload-text-encoder-percent "$LAYER_OFFLOAD_TEXT_ENCODER_PERCENT"', source)
+
     def test_new_job_ui_surfaces_block_offload_controls(self) -> None:
         page_path = PROJECT_ROOT / "trainer-ui" / "src" / "app" / "jobs" / "new" / "page.tsx"
         wizard_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx"
@@ -965,6 +1046,30 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("Transformer blocks", i18n_source)
         self.assertIn("--block-offload", source)
         self.assertIn("--block-offload-num-blocks", source)
+
+    def test_new_job_ui_surfaces_layer_offload_controls(self) -> None:
+        wizard_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx"
+        config_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "trainingConfig.ts"
+        jobs_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts"
+        i18n_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx"
+
+        source = (
+            wizard_path.read_text(encoding="utf-8")
+            + config_path.read_text(encoding="utf-8")
+            + jobs_path.read_text(encoding="utf-8")
+        )
+        i18n_source = i18n_path.read_text(encoding="utf-8")
+
+        self.assertIn("layerOffload", source)
+        self.assertIn("layerOffloadTransformerPercent", source)
+        self.assertIn("layerOffloadTextEncoderPercent", source)
+        self.assertIn("LAYER_OFFLOAD=", source)
+        self.assertIn("LAYER_OFFLOAD_TRANSFORMER_PERCENT=", source)
+        self.assertIn("LAYER_OFFLOAD_TEXT_ENCODER_PERCENT=", source)
+        self.assertIn("Layer offloading", i18n_source)
+        self.assertIn("层卸载", i18n_source)
+        self.assertIn("Transformer offload", i18n_source)
+        self.assertIn("Text encoder offload", i18n_source)
 
     def test_flux2_sampling_uses_prepared_transformer(self) -> None:
         script_path = PROJECT_ROOT / "flux2-klein_self-distill-edit" / "train_dopsd.py"
@@ -2081,6 +2186,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("Packaged workspace template freshness", source)
         self.assertIn("workspace-template", source)
         self.assertIn("BLOCK_OFFLOAD_NUM_BLOCKS:-1", source)
+        self.assertIn("LAYER_OFFLOAD_TRANSFORMER_PERCENT:-1.0", source)
+        self.assertIn("layer_offload_transformer_percent", source)
         self.assertIn('request.get("block_offload_num_blocks", 1)', source)
         self.assertIn('"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload)', source)
         self.assertIn('$previousErrorActionPreference = $ErrorActionPreference', source)

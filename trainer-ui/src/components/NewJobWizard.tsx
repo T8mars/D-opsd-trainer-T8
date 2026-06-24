@@ -47,6 +47,9 @@ type TrainingForm = Required<Pick<
   | 'use8bitAdam'
   | 'blockOffload'
   | 'blockOffloadNumBlocks'
+  | 'layerOffload'
+  | 'layerOffloadTransformerPercent'
+  | 'layerOffloadTextEncoderPercent'
 >>;
 
 type NumericTrainingField =
@@ -60,7 +63,9 @@ type NumericTrainingField =
   | 'resolutionScale'
   | 'sampleResolutionScale'
   | 'finalSampleResolutionScale'
-  | 'blockOffloadNumBlocks';
+  | 'blockOffloadNumBlocks'
+  | 'layerOffloadTransformerPercent'
+  | 'layerOffloadTextEncoderPercent';
 
 type BooleanTrainingField =
   | 'skipInitialSample'
@@ -68,7 +73,8 @@ type BooleanTrainingField =
   | 'saveCheckpoints'
   | 'lowVram'
   | 'use8bitAdam'
-  | 'blockOffload';
+  | 'blockOffload'
+  | 'layerOffload';
 
 const defaultRecipe = recipes.find(recipe => recipe.id === 'flux2-klein-identity') ?? recipes[0];
 
@@ -94,6 +100,9 @@ function defaultTrainingForm(recipe = defaultRecipe): TrainingForm {
     use8bitAdam: true,
     blockOffload: profile.blockOffload,
     blockOffloadNumBlocks: 1,
+    layerOffload: false,
+    layerOffloadTransformerPercent: 1,
+    layerOffloadTextEncoderPercent: 1,
   };
 }
 
@@ -187,6 +196,9 @@ export default function NewJobWizard() {
     `USE_8BIT_ADAM=${trainingOverrides.use8bitAdam ? '1' : '0'}`,
     `BLOCK_OFFLOAD=${trainingOverrides.blockOffload ? '1' : '0'}`,
     `BLOCK_OFFLOAD_NUM_BLOCKS=${trainingOverrides.blockOffloadNumBlocks}`,
+    `LAYER_OFFLOAD=${trainingOverrides.layerOffload ? '1' : '0'}`,
+    `LAYER_OFFLOAD_TRANSFORMER_PERCENT=${trainingOverrides.layerOffloadTransformerPercent}`,
+    `LAYER_OFFLOAD_TEXT_ENCODER_PERCENT=${trainingOverrides.layerOffloadTextEncoderPercent}`,
     'DATA_PATH_TRAIN_JSONL=<selected dataset>',
     `timeout ${Math.max(selectedProfile.timeoutSeconds, Math.min(172800, Math.ceil(trainingOverrides.maxTrainSteps * 180 + 1800)))}`,
     `bash ${selectedProfile.runnerScript}`,
@@ -560,6 +572,7 @@ export default function NewJobWizard() {
                 ['saveCheckpoints', t('saveCheckpoints')],
                 ['skipInitialSample', t('skipInitialSample')],
                 ['blockOffload', t('blockOffload')],
+                ['layerOffload', t('layerOffloading')],
               ] satisfies Array<[BooleanTrainingField, string]>).map(([field, label]) => (
                 <label key={String(field)} className="flex min-h-11 items-center gap-3 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-ink-200">
                   <input
@@ -616,6 +629,30 @@ export default function NewJobWizard() {
                   onChange={event => updateNumberField('finalSampleResolutionScale', event.target.value)}
                 />
               </div>
+            </div>
+
+            <div className={`grid gap-2 sm:grid-cols-2 ${trainingOverrides.layerOffload ? '' : 'opacity-60'}`}>
+              {([
+                ['layerOffloadTransformerPercent', t('transformerOffload')],
+                ['layerOffloadTextEncoderPercent', t('textEncoderOffload')],
+              ] satisfies Array<[NumericTrainingField, string]>).map(([field, label]) => (
+                <div key={String(field)} className="rounded-md border border-white/10 bg-white/[0.04] p-3">
+                  <div className="flex items-center justify-between gap-3 text-xs uppercase tracking-wide text-ink-400">
+                    <span>{label}</span>
+                    <span className="text-aqua-300">{formatScale(trainingOverrides[field], t)}</span>
+                  </div>
+                  <input
+                    value={trainingOverrides[field]}
+                    max={1}
+                    min={0}
+                    step={0.05}
+                    type="range"
+                    disabled={!trainingOverrides.layerOffload}
+                    className="mt-2 w-full accent-cyan-300 disabled:cursor-not-allowed"
+                    onChange={event => updateNumberField(field, event.target.value)}
+                  />
+                </div>
+              ))}
             </div>
 
             <label className="block rounded-md border border-white/10 bg-white/[0.04] p-3">

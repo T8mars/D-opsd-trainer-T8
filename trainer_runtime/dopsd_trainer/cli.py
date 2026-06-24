@@ -40,6 +40,9 @@ def main() -> None:
     command_parser.add_argument("--low-vram", action="store_true")
     command_parser.add_argument("--block-offload", action="store_true")
     command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)
+    command_parser.add_argument("--layer-offload", action="store_true")
+    command_parser.add_argument("--layer-offload-transformer-percent", type=float, default=1.0)
+    command_parser.add_argument("--layer-offload-text-encoder-percent", type=float, default=1.0)
     command_parser.add_argument("--resolution-scale")
     command_parser.add_argument("--no-save-samples", action="store_true")
     command_parser.add_argument("--no-save-checkpoints", action="store_true")
@@ -82,6 +85,9 @@ def main() -> None:
             low_vram=args.low_vram,
             block_offload=args.block_offload,
             block_offload_num_blocks=args.block_offload_num_blocks,
+            layer_offload=args.layer_offload,
+            layer_offload_transformer_percent=args.layer_offload_transformer_percent,
+            layer_offload_text_encoder_percent=args.layer_offload_text_encoder_percent,
             resolution_scale=args.resolution_scale,
             save_samples=not args.no_save_samples,
             save_checkpoints=not args.no_save_checkpoints,

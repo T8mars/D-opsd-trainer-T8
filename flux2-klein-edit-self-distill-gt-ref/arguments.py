@@ -39,6 +39,12 @@ def parse_args():
                         help="Use Diffusers group block offload for the transformer when low VRAM is not enough.")
     parser.add_argument("--block-offload-num-blocks", type=int, default=1,
                         help="Transformer blocks per CPU/GPU transfer group for --block-offload.")
+    parser.add_argument("--layer-offload", action=argparse.BooleanOptionalAction, default=False,
+                        help="Use ai-toolkit-style training-time layer offloading for eligible Linear/Conv layers.")
+    parser.add_argument("--layer-offload-transformer-percent", type=float, default=1.0,
+                        help="Fraction of transformer Linear/Conv layers to offload when --layer-offload is enabled.")
+    parser.add_argument("--layer-offload-text-encoder-percent", type=float, default=1.0,
+                        help="Fraction of text encoder Linear/Conv layers to offload when --layer-offload is enabled.")
     parser.add_argument("--sample-resolution-scale", type=float, default=1.0,
                         help="Scale inline sample image generation. Use below 1.0 for low-VRAM smoke sample previews.")
     #vae

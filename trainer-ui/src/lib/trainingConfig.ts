@@ -38,6 +38,9 @@ export type TrainingOverridesV2 = {
     lowVram?: boolean;
     blockOffload?: boolean;
     blockOffloadNumBlocks?: number;
+    layerOffload?: boolean;
+    layerOffloadTransformerPercent?: number;
+    layerOffloadTextEncoderPercent?: number;
     tileSize?: number;
   };
   advancedDopsd: {
@@ -66,6 +69,9 @@ export type LegacyTrainingOverrides = {
   use8bitAdam?: boolean;
   blockOffload?: boolean;
   blockOffloadNumBlocks?: number;
+  layerOffload?: boolean;
+  layerOffloadTransformerPercent?: number;
+  layerOffloadTextEncoderPercent?: number;
   networkDim?: number;
   rank?: number;
   networkAlpha?: number;
@@ -179,6 +185,9 @@ export function normalizeTrainingConfigV2(config?: TrainingOverridesV2): Trainin
       lowVram: boolOrUndefined(memory.lowVram),
       blockOffload: boolOrUndefined(memory.blockOffload),
       blockOffloadNumBlocks: boundedInt(memory.blockOffloadNumBlocks, 1, 16),
+      layerOffload: boolOrUndefined(memory.layerOffload),
+      layerOffloadTransformerPercent: boundedFloat(memory.layerOffloadTransformerPercent, 0, 1),
+      layerOffloadTextEncoderPercent: boundedFloat(memory.layerOffloadTextEncoderPercent, 0, 1),
       tileSize: boundedInt(memory.tileSize, 16, 512),
     }),
     advancedDopsd: dropUndefined({
@@ -227,6 +236,9 @@ export function migrateTrainingOverridesToV2(legacy?: LegacyTrainingOverrides | 
       lowVram: boolOrUndefined(legacy.lowVram),
       blockOffload: boolOrUndefined(legacy.blockOffload),
       blockOffloadNumBlocks: boundedInt(legacy.blockOffloadNumBlocks, 1, 16),
+      layerOffload: boolOrUndefined(legacy.layerOffload),
+      layerOffloadTransformerPercent: boundedFloat(legacy.layerOffloadTransformerPercent, 0, 1),
+      layerOffloadTextEncoderPercent: boundedFloat(legacy.layerOffloadTextEncoderPercent, 0, 1),
       tileSize: boundedInt(legacy.tileSize, 16, 512),
     }),
     advancedDopsd: {},
@@ -257,6 +269,9 @@ export function flattenTrainingConfigForRunner(config?: TrainingOverridesV2): Le
     lowVram: normalized.memory.lowVram,
     blockOffload: normalized.memory.blockOffload,
     blockOffloadNumBlocks: normalized.memory.blockOffloadNumBlocks,
+    layerOffload: normalized.memory.layerOffload,
+    layerOffloadTransformerPercent: normalized.memory.layerOffloadTransformerPercent,
+    layerOffloadTextEncoderPercent: normalized.memory.layerOffloadTextEncoderPercent,
     tileSize: normalized.memory.tileSize,
   });
 }

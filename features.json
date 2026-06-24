@@ -1059,12 +1059,14 @@
     {
       "id": "ai-toolkit-layer-offloading-parity",
       "name": "ai-toolkit MemoryManager layer offloading parity",
-      "status": "planned",
-      "scope": "Track the remaining gap between D-OPSD's current Diffusers group block offload and ai-toolkit's training-time MemoryManager layer_offloading controls.",
+      "status": "verified",
+      "scope": "Expose ai-toolkit-style training-time MemoryManager layer offloading controls separately from D-OPSD's Diffusers group block offload.",
       "evidence": [
         "2026-06-24 audit of ostris/ai-toolkit found layer_offloading implemented through MemoryManager.attach(module, device, offload_percent=...) and UI controls for Layer Offloading, Transformer Offload %, and Text Encoder Offload %",
-        "Current D-OPSD block offload is Diffusers group block offload scoped to final sampling paths, not ai-toolkit-style training-time per-layer CPU/GPU memory management",
-        "This item must remain planned until FLUX2 Identity, FLUX2 Editing, and Z-Image training scripts expose and verify training-time transformer/text-encoder layer offload percentages without the prior cuda/cpu device mismatch"
+        "D-OPSD block offload remains Diffusers group block offload scoped to final sampling paths, while Layer Offloading is a separate default-off training-time per-layer CPU/GPU memory management feature",
+        "Runtime command builder, recipe CLIs, smoke scripts, New Job UI controls, runner environment variables, README, and release freshness checks now expose Layer Offloading plus Transformer/Text Encoder percentage settings",
+        "The first FLUX2 Identity WSL layer-offload smoke exposed a real bf16 backward dtype mismatch in the copied MemoryManager path; trainer_runtime/dopsd_trainer/memory_management/manager_modules.py now aligns grad_out to the staged weight dtype for Linear and Conv2d grad-input calculations, with a regression test covering the fix",
+        "FLUX2 Identity WSL smoke completed with LAYER_OFFLOAD=1, LAYER_OFFLOAD_TRANSFORMER_PERCENT=0.25, LAYER_OFFLOAD_TEXT_ENCODER_PERCENT=0.25, RESOLUTION_SCALE=0.25, MAX_TRAIN_STEPS=1, no samples/checkpoints, trainableParams 983040, one completed step, loss_total 2.26, and runner exit 0"
       ]
     },
     {
