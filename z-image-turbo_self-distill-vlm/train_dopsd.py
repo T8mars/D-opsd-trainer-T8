@@ -1,5 +1,6 @@
 import os
 import time
+import gc
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import random
@@ -10,6 +11,7 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from accelerate.utils.deepspeed import get_active_deepspeed_plugin
 from accelerate.logging import get_logger
 from diffusers import ZImagePipeline
+from diffusers.pipelines.z_image.pipeline_z_image import calculate_shift, retrieve_timesteps
 from diffusers.utils.torch_utils import is_compiled_module
 import tqdm
 import logging
@@ -60,6 +62,159 @@ def unwrap_model(model, accelerator):
     model = accelerator.unwrap_model(model)
     model = model._orig_mod if is_compiled_module(model) else model
     return model
+
+def scale_resolutions(resolutions, scale, target_resolution=1024):
+    if scale <= 0:
+        raise ValueError("--resolution-scale must be greater than 0")
+    if target_resolution <= 0:
+        raise ValueError("--target-resolution must be greater than 0")
+
+    effective_scale = scale * (target_resolution / 1024.0)
+    if effective_scale == 1.0:
+        return resolutions
+
+    scaled = []
+    for width, height in resolutions:
+        scaled_width = max(64, int(round((width * effective_scale) / 16)) * 16)
+        scaled_height = max(64, int(round((height * effective_scale) / 16)) * 16)
+        scaled.append((scaled_width, scaled_height))
+    return scaled
+
+def free_cuda_memory():
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+def offload_zimage_conditioners(pipeline, vl_model):
+    pipeline.text_encoder.to("cpu")
+    pipeline.vae.to("cpu")
+    vl_model.to("cpu")
+    free_cuda_memory()
+
+def enable_transformer_block_offload(transformer, device, num_blocks_per_group, logger):
+    if getattr(transformer, "_dopsd_block_offload_enabled", False):
+        return
+    try:
+        from diffusers.hooks import apply_group_offloading
+    except Exception as exc:
+        raise RuntimeError(
+            "--block-offload requires a Diffusers build with apply_group_offloading support."
+        ) from exc
+
+    blocks_per_group = max(1, int(num_blocks_per_group))
+    apply_group_offloading(
+        transformer,
+        onload_device=torch.device(device),
+        offload_device=torch.device("cpu"),
+        offload_type="block_level",
+        num_blocks_per_group=blocks_per_group,
+        non_blocking=torch.cuda.is_available(),
+        use_stream=False,
+    )
+    transformer._dopsd_block_offload_enabled = True
+    logger.info(f"Transformer block offload enabled: {blocks_per_group} block(s) per group")
+
+def move_prompt_embeds_to_device(prompt_embeds, device, dtype):
+    return [embed.to(device=device, dtype=dtype) for embed in prompt_embeds]
+
+def encode_zimage_prompts_for_sampling(pipeline, tokenizer, prompts, sample_device, dtype, low_vram):
+    prompt_input = prompts if isinstance(prompts, str) else list(prompts)
+    prompt_embeds = _encode_prompt(
+        pipeline.text_encoder,
+        tokenizer,
+        prompt_input,
+        max_sequence_length=512,
+        device="cpu" if low_vram else sample_device,
+    )
+    return move_prompt_embeds_to_device(prompt_embeds, sample_device, dtype)
+
+@torch.no_grad()
+def sample_zimage_from_prompt_embeds(
+    pipeline,
+    prompt_embeds,
+    height,
+    width,
+    num_inference_steps,
+    guidance_scale,
+    generator,
+    device,
+    output_type="pt",
+):
+    if guidance_scale != 0.0:
+        raise NotImplementedError("Explicit-device Z-Image sampling currently supports guidance_scale=0.0 only.")
+
+    pipeline._guidance_scale = guidance_scale
+    pipeline._joint_attention_kwargs = None
+    pipeline._interrupt = False
+    pipeline._cfg_normalization = False
+    pipeline._cfg_truncation = 1.0
+
+    batch_size = len(prompt_embeds)
+    num_channels_latents = pipeline.transformer.in_channels
+    latents = pipeline.prepare_latents(
+        batch_size,
+        num_channels_latents,
+        height,
+        width,
+        torch.float32,
+        device,
+        generator,
+        None,
+    )
+
+    image_seq_len = (latents.shape[2] // 2) * (latents.shape[3] // 2)
+    mu = calculate_shift(
+        image_seq_len,
+        pipeline.scheduler.config.get("base_image_seq_len", 256),
+        pipeline.scheduler.config.get("max_image_seq_len", 4096),
+        pipeline.scheduler.config.get("base_shift", 0.5),
+        pipeline.scheduler.config.get("max_shift", 1.15),
+    )
+    pipeline.scheduler.sigma_min = 0.0
+    timesteps, num_inference_steps = retrieve_timesteps(
+        pipeline.scheduler,
+        num_inference_steps,
+        device,
+        sigmas=None,
+        mu=mu,
+    )
+    num_warmup_steps = max(len(timesteps) - num_inference_steps * pipeline.scheduler.order, 0)
+    pipeline._num_timesteps = len(timesteps)
+    pipeline.scheduler.set_begin_index(0)
+
+    with pipeline.progress_bar(total=num_inference_steps) as progress_bar:
+        for i, timestep in enumerate(timesteps):
+            if pipeline.interrupt:
+                continue
+
+            timestep_model_input = timestep.expand(latents.shape[0])
+            timestep_model_input = (1000 - timestep_model_input) / 1000
+            latent_model_input = latents.to(pipeline.transformer.dtype)
+            latent_model_input = latent_model_input.unsqueeze(2)
+            latent_model_input_list = list(latent_model_input.unbind(dim=0))
+
+            model_out_list = pipeline.transformer(
+                latent_model_input_list,
+                timestep_model_input,
+                prompt_embeds,
+                return_dict=False,
+            )[0]
+            noise_pred = torch.stack([item.float() for item in model_out_list], dim=0)
+            noise_pred = -noise_pred.squeeze(2)
+
+            latents = pipeline.scheduler.step(noise_pred.to(torch.float32), timestep, latents, return_dict=False)[0]
+            assert latents.dtype == torch.float32
+
+            if i == len(timesteps) - 1 or ((i + 1) > num_warmup_steps and (i + 1) % pipeline.scheduler.order == 0):
+                progress_bar.update()
+
+    if output_type == "latent":
+        return latents
+
+    latents = latents.to(pipeline.vae.dtype)
+    latents = (latents / pipeline.vae.config.scaling_factor) + pipeline.vae.config.shift_factor
+    images = pipeline.vae.decode(latents, return_dict=False)[0]
+    return pipeline.image_processor.postprocess(images, output_type=output_type)
 
 
 
@@ -150,15 +305,17 @@ def main(args):
     )
     ds_config = args.deepspeed_config
 
-    zero2_plugin_a = DeepSpeedPlugin(hf_ds_config=ds_config)
-    deepspeed_plugins = {"z2_a": zero2_plugin_a}
+    zero2_plugin_a = None
+    accelerator_kwargs = {
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "mixed_precision": args.mixed_precision,
+        "project_config": accelerator_project_config,
+    }
+    if ds_config:
+        zero2_plugin_a = DeepSpeedPlugin(hf_ds_config=ds_config)
+        accelerator_kwargs["deepspeed_plugins"] = {"z2_a": zero2_plugin_a}
 
-    accelerator = Accelerator(
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        mixed_precision=args.mixed_precision,
-        project_config=accelerator_project_config,
-        deepspeed_plugins=deepspeed_plugins,
-    )
+    accelerator = Accelerator(**accelerator_kwargs)
 
     os.makedirs(args.output_dir, exist_ok=True)  # Make results folder (holds all experiment subfolders)
     save_dir = os.path.join(args.output_dir, args.exp_name)
@@ -193,6 +350,7 @@ def main(args):
     pipeline = ZImagePipeline.from_pretrained(
         args.pretrained_model,
         low_cpu_mem_usage=False,
+        torch_dtype=inference_dtype,
     )
 
     num_channels_latents = pipeline.transformer.in_channels
@@ -205,13 +363,14 @@ def main(args):
 
 
     # get vlm encoder
-    vl_model_name = "Qwen/Qwen3-VL-4B-Instruct"
+    vl_model_name = os.environ.get("DOPSD_QWEN_VL_MODEL", "Qwen/Qwen3-VL-4B-Instruct")
     min_pixels = 512 * 512
     max_pixels = 768 * 768
     from transformers import AutoProcessor, AutoModelForImageTextToText
     processor = AutoProcessor.from_pretrained(vl_model_name, min_pixels=min_pixels, max_pixels=max_pixels)
     vl_model = AutoModelForImageTextToText.from_pretrained(
         vl_model_name,
+        torch_dtype=inference_dtype,
     )
     missing_keys, unexpected_keys = load_matching_state_dict(
         target_module=vl_model.model.language_model,
@@ -219,7 +378,10 @@ def main(args):
         verbose=False,
     )
     vl_model.requires_grad_(False)
-    vl_model.to(accelerator.device, dtype=inference_dtype)
+    if args.low_vram:
+        vl_model.to("cpu", dtype=inference_dtype)
+    else:
+        vl_model.to(accelerator.device, dtype=inference_dtype)
 
     if accelerator.is_main_process:
         logger.info(f"VLM loaded, dtype: {vl_model.parameters().__next__().dtype}")
@@ -259,13 +421,19 @@ def main(args):
     # Move vae and text_encoder to device and cast to inference_dtype
     if args.vae_dtype == "fp32":
         vae_dtype = torch.float32
-        pipeline.vae.to(accelerator.device, dtype=vae_dtype)
     else:
         vae_dtype = inference_dtype
-        pipeline.vae.to(accelerator.device, dtype=vae_dtype)
     # avoid OOM
     pipeline.vae.enable_slicing()
-    pipeline.text_encoder.to(accelerator.device, dtype=inference_dtype)
+    if args.low_vram:
+        pipeline.vae.to("cpu", dtype=vae_dtype)
+        pipeline.text_encoder.to("cpu", dtype=inference_dtype)
+        free_cuda_memory()
+        if accelerator.is_main_process:
+            logger.info("Low VRAM mode enabled: frozen VAE/text encoder/VLM offload to CPU.")
+    else:
+        pipeline.vae.to(accelerator.device, dtype=vae_dtype)
+        pipeline.text_encoder.to(accelerator.device, dtype=inference_dtype)
 
     gen_model = pipeline.transformer
     gen_model_trainable_parameters = list(filter(lambda p: p.requires_grad, gen_model.parameters()))
@@ -316,28 +484,27 @@ def main(args):
     test_prompt_keys = ['short_en', 'short_zh', 'medium_zh', 'medium_en', "user_prompt_en", "user_prompt_zh"]
     select_ratio_index = [j for j in range(len(all_ratios))]
     select_ratio = [all_ratios[i] for i in select_ratio_index]
+    target_resolutions = scale_resolutions(parse_ratios(select_ratio), args.resolution_scale, args.target_resolution)
 
     dataset_root = Path(__file__).resolve().parent
     train_jsonl_path = resolve_existing_path(args.data_path_train_jsonl, dataset_root)
     test_jsonl_path = resolve_existing_path(args.data_path_test_jsonl, dataset_root)
 
     if '1024x1024 ( 1:1 index_0 )' in select_ratio:
-        test_h, test_w = 1024, 1024
+        test_w, test_h = target_resolutions[select_ratio.index('1024x1024 ( 1:1 index_0 )')]
     else:
-        test_ratio = select_ratio[0]
-        test_w = int(test_ratio.split('x')[0])
-        test_h = int(test_ratio.split('x')[1].split(' ')[0])
+        test_w, test_h = target_resolutions[0]
 
     train_dataset = TextImageDataset(
         str(train_jsonl_path),
-        target_resolutions=parse_ratios(select_ratio),
+        target_resolutions=target_resolutions,
         data_root=dataset_root,
     )
 
     train_sampler = AspectBatchSampler(
         buckets=train_dataset.buckets,
         batch_size=args.batch_size,
-        target_resolutions=parse_ratios(select_ratio),
+        target_resolutions=target_resolutions,
         prompt_keys=prompt_keys,
         num_replicas=accelerator.num_processes,
         rank=accelerator.process_index,
@@ -377,6 +544,12 @@ def main(args):
     # printing
     if accelerator.is_main_process:
         logger.info(f"Dataset contains {num_samples} samples")
+        if not args.save_checkpoints:
+            logger.info("Checkpoint saving disabled")
+        if not args.save_samples:
+            logger.info("Sample generation disabled")
+        if args.block_offload:
+            logger.info("Transformer block offload requested for final sampling only")
         logger.info(
             f"Total batch size: {local_batch_size * accelerator.num_processes * args.gradient_accumulation_steps}")
         logger.info(
@@ -394,10 +567,16 @@ def main(args):
         with open(log_gen, 'w') as f:
             f.write("loss for few step generator\n")
 
-    assert get_active_deepspeed_plugin(accelerator.state) is zero2_plugin_a
-    gen_model, optimizer_gen, test_dataloader = accelerator.prepare(
-        gen_model, optimizer_gen, test_dataloader
-    )
+    if zero2_plugin_a is not None:
+        assert get_active_deepspeed_plugin(accelerator.state) is zero2_plugin_a
+        gen_model, optimizer_gen, test_dataloader = accelerator.prepare(
+            gen_model, optimizer_gen, test_dataloader
+        )
+    else:
+        gen_model, optimizer_gen = accelerator.prepare(gen_model, optimizer_gen)
+
+    # Keep pipeline-based sampling on the same prepared transformer used for training.
+    pipeline.transformer = gen_model
 
     global_step = 0
     epoch_start = -1
@@ -416,54 +595,69 @@ def main(args):
 
     ############################################### Train Loop ######################################################
 
-    # get sample prompts, free to change
-    test_prompts, gt_image_paths = next(iter(test_dataloader))
-    test_images_gt = []
-    for image_path in gt_image_paths:
-        with Image.open(image_path) as img:
-            test_images_gt.append(img.convert("RGB"))
+    if args.save_samples:
+        # get sample prompts, free to change
+        test_prompts, gt_image_paths = next(iter(test_dataloader))
+        test_images_gt = []
+        for image_path in gt_image_paths:
+            with Image.open(image_path) as img:
+                test_images_gt.append(img.convert("RGB"))
 
-    with torch.no_grad():
         generator_test = create_generator(test_prompts, 2026)
-        # sample multistep images for comparison
-        pipeline.vae.to(accelerator.device, dtype=inference_dtype)
-        with accelerator.autocast():
-            with pipeline.transformer.disable_adapter() if args.use_lora > 1 else torch.no_grad():
-                images = pipeline(
-                    prompt=test_prompts,
-                    height=test_h,
-                    width=test_w,
-                    num_inference_steps=9  if args.num_training_steps < 10 else 50, # This actually results in 8 DiT forwards when set to 9
-                    guidance_scale=0.0 if args.num_training_steps < 10 else 4.0,
-                    generator=generator_test,
-                    output_type="pt",
-                )[0]
+        if not args.skip_initial_sample:
+            with torch.no_grad():
+                # sample multistep images for comparison
+                prompt_embeds_test = encode_zimage_prompts_for_sampling(
+                    pipeline,
+                    tokenizer,
+                    test_prompts,
+                    accelerator.device,
+                    inference_dtype,
+                    args.low_vram,
+                )
+                pipeline.vae.to(accelerator.device, dtype=inference_dtype)
+                with accelerator.autocast():
+                    with pipeline.transformer.disable_adapter() if args.use_lora > 1 else torch.no_grad():
+                        images = sample_zimage_from_prompt_embeds(
+                            pipeline,
+                            prompt_embeds_test,
+                            height=test_h,
+                            width=test_w,
+                            num_inference_steps=9 if args.num_training_steps < 10 else 50,
+                            guidance_scale=0.0 if args.num_training_steps < 10 else 4.0,
+                            generator=generator_test,
+                            device=accelerator.device,
+                            output_type="pt",
+                        )
 
-        # resize to 1/2 resolution according to its original size
-        images = torch.nn.functional.interpolate(images, size=(test_h // 2, test_w // 2), mode='bicubic',
-                                                 align_corners=False)
+                # resize to 1/2 resolution according to its original size
+                images = torch.nn.functional.interpolate(images, size=(test_h // 2, test_w // 2), mode='bicubic',
+                                                         align_corners=False)
 
-        # Save images locally
-        accelerator.wait_for_everyone()
-        out_samples = accelerator.gather(images.to(torch.float32))
+                # Save images locally
+                accelerator.wait_for_everyone()
+                out_samples = accelerator.gather(images.to(torch.float32))
 
-        pipeline.vae.to(accelerator.device, dtype=vae_dtype)
+                pipeline.vae.to(accelerator.device, dtype=vae_dtype)
 
-        # Save as grid images
-        out_samples = Image.fromarray(array2grid(out_samples))
-        if accelerator.is_main_process:
-            base_dir = os.path.join(args.output_dir, args.exp_name)
-            sample_dir = os.path.join(base_dir, "samples")
-            os.makedirs(sample_dir, exist_ok=True)
-            out_samples.save(f"{sample_dir}/samples_original.png")
-            logger.info(f"Saved original sample images to {sample_dir}/samples_original.png")
+                # Save as grid images
+                out_samples = Image.fromarray(array2grid(out_samples))
+                if accelerator.is_main_process:
+                    base_dir = os.path.join(args.output_dir, args.exp_name)
+                    sample_dir = os.path.join(base_dir, "samples")
+                    os.makedirs(sample_dir, exist_ok=True)
+                    out_samples.save(f"{sample_dir}/samples_original.png")
+                    logger.info(f"Saved original sample images to {sample_dir}/samples_original.png")
+                del images, out_samples, prompt_embeds_test
+                free_cuda_memory()
+                if args.low_vram:
+                    offload_zimage_conditioners(pipeline, vl_model)
+        else:
+            logger.info("Skipped initial sample generation by request")
 
     grad_norm = 0
     for epoch in range(epoch_start + 1, args.epochs):
         for batch in train_dataloader:
-
-            if global_step > 1000:
-                args.sample_steps = 500
 
             with accelerator.accumulate(gen_model):
 
@@ -474,7 +668,10 @@ def main(args):
 
 
                 images_vl = (images + 1) / 2
-                images_vl = list(images_vl.unbind(dim=0))
+                if args.low_vram:
+                    images_vl = list(images_vl.to("cpu").unbind(dim=0))
+                else:
+                    images_vl = list(images_vl.unbind(dim=0))
 
                 bsz = images.shape[0]
                 h, w = images.shape[2], images.shape[3]
@@ -494,29 +691,59 @@ def main(args):
 
 
                 with torch.no_grad():
+                    if args.low_vram:
+                        pipeline.vae.to(accelerator.device, dtype=vae_dtype)
                     with accelerator.autocast():
                         prompt_embeds_list = _encode_prompt(
                             pipeline.text_encoder,
                             tokenizer,
                             prompts,
                             max_sequence_length=512,
-                            device=accelerator.device,
+                            device="cpu" if args.low_vram else accelerator.device,
                         )
+                    if args.low_vram:
+                        prompt_embeds_list = move_prompt_embeds_to_device(
+                            prompt_embeds_list,
+                            accelerator.device,
+                            inference_dtype,
+                        )
+                        free_cuda_memory()
+
+                    with torch.no_grad():
+                        if not args.low_vram:
+                            vl_model.to(accelerator.device, dtype=inference_dtype)
                         prompt_embeds_list_vl = get_qwen3vl_zimage_prompt_embeds(
                             vl_model=vl_model,
                             processor=processor,
                             prompts=prompts,
                             images=images_vl,
-                            device=accelerator.device,
+                            device="cpu" if args.low_vram else accelerator.device,
                             dtype=inference_dtype,
                             max_sequence_length=1024,
                             num_images_per_prompt=1,
                              hidden_state_layer=-2,
                             use_system_prompt=False,
                         )
+                        if args.low_vram:
+                            prompt_embeds_list_vl = move_prompt_embeds_to_device(
+                                prompt_embeds_list_vl,
+                                accelerator.device,
+                                inference_dtype,
+                            )
+                        else:
+                            prompt_embeds_list_vl = move_prompt_embeds_to_device(
+                                prompt_embeds_list_vl,
+                                accelerator.device,
+                                inference_dtype,
+                            )
 
+                    with torch.no_grad():
+                        if args.low_vram:
+                            pipeline.vae.to(accelerator.device, dtype=vae_dtype)
                         images = pipeline.vae.encode(images).latent_dist.mode()
                         images = (images - pipeline.vae.config.shift_factor) * pipeline.vae.config.scaling_factor
+                    if args.low_vram:
+                        offload_zimage_conditioners(pipeline, vl_model)
 
 
                 latents_begin = pipeline.prepare_latents(
@@ -603,7 +830,7 @@ def main(args):
                     total_loss = total_loss + loss_dopsd
                     loss_dopsd_whole.append(loss_dopsd.detach())
 
-                    if accelerator.sync_gradients and ((global_step + 1) % args.sample_steps == 0):
+                    if args.save_samples and args.sample_steps > 0 and accelerator.sync_gradients and ((global_step + 1) % args.sample_steps == 0):
                         student_x0_traj.append(x_0_student.detach())
                         teacher_x0_traj.append(x_0_teacher.detach())
 
@@ -642,7 +869,7 @@ def main(args):
                             f_log_gen.write(f"{json.dumps(logs)}\n")
 
                     # save model
-                    if global_step % args.checkpoint_steps == 0 or global_step == args.max_train_steps:
+                    if args.save_checkpoints and (global_step % args.checkpoint_steps == 0 or global_step == args.max_train_steps):
                         # save checkpoint
                         if accelerator.is_main_process:
                             if args.use_lora > 1:
@@ -655,8 +882,23 @@ def main(args):
                                 logger.info(f"Saved model checkpoint to {checkpoint_dir} at step {global_step}")
 
                     # visualize samples
-                    if global_step % args.sample_steps == 0 or global_step == args.max_train_steps:
+                    if args.save_samples and args.sample_steps > 0 and (global_step % args.sample_steps == 0 or global_step == args.max_train_steps):
+                        if args.block_offload and global_step == args.max_train_steps:
+                            enable_transformer_block_offload(
+                                unwrap_model(gen_model, accelerator),
+                                accelerator.device,
+                                args.block_offload_num_blocks,
+                                logger,
+                            )
                         with torch.no_grad():
+                            prompt_embeds_test = encode_zimage_prompts_for_sampling(
+                                pipeline,
+                                tokenizer,
+                                test_prompts,
+                                accelerator.device,
+                                inference_dtype,
+                                args.low_vram,
+                            )
                             pipeline.vae.to(accelerator.device, dtype=inference_dtype)
 
                             traj_dir = os.path.join(args.output_dir, args.exp_name)
@@ -674,16 +916,17 @@ def main(args):
                             # sample multistep images for comparison
                             gen_model.set_adapter("student")
                             with accelerator.autocast():
-                                images_s = pipeline(
-                                    prompt=test_prompts,
+                                images_s = sample_zimage_from_prompt_embeds(
+                                    pipeline,
+                                    prompt_embeds_test,
                                     height=test_h,
                                     width=test_w,
                                     num_inference_steps=9 if args.num_training_steps < 10 else 50,
-                                    # This actually results in 8 DiT forwards when set to 9
                                     guidance_scale=0.0 if args.num_training_steps < 10 else 4.0,
                                     generator=generator_test,
+                                    device=accelerator.device,
                                     output_type="pt",
-                                )[0]
+                                )
 
                             images_s = torch.nn.functional.interpolate(images_s, size=(test_h // 2, test_w // 2),
                                                                      mode='bicubic', align_corners=False)
@@ -695,24 +938,29 @@ def main(args):
                                     processor=processor,
                                     prompts=test_prompts,
                                     images=test_images_gt,
-                                    device=accelerator.device,
+                                    device="cpu" if args.low_vram else accelerator.device,
                                     dtype=inference_dtype,
                                     max_sequence_length=1024,
                                     num_images_per_prompt=1,
                                      hidden_state_layer=-2,
                                     use_system_prompt=False,
                         )
-                                images_t = pipeline(
-                                    prompt_embeds=prompt_embeds_vl_test,
+                                prompt_embeds_vl_test = move_prompt_embeds_to_device(
+                                    prompt_embeds_vl_test,
+                                    accelerator.device,
+                                    inference_dtype,
+                                )
+                                images_t = sample_zimage_from_prompt_embeds(
+                                    pipeline,
+                                    prompt_embeds_vl_test,
                                     height=test_h,
                                     width=test_w,
                                     num_inference_steps=9 if args.num_training_steps < 10 else 50,
-                                    # This actually results in 8 DiT forwards when set to 9
                                     guidance_scale=0.0 if args.num_training_steps < 10 else 4.0,
-                                    # Guidance should be 0 for the Turbo models
                                     generator=generator_test,
+                                    device=accelerator.device,
                                     output_type="pt",
-                                )[0]
+                                )
                             image_t = torch.nn.functional.interpolate(images_t, size=(test_h // 2, test_w // 2), mode='bicubic', align_corners=False)
 
                             # Save images locally
@@ -733,6 +981,10 @@ def main(args):
                                 logger.info(f"Saved sample images to {sample_dir}/samples_step_{global_step}.png")
 
                             pipeline.vae.to(accelerator.device, dtype=vae_dtype)
+                            del images_s, images_t, image_t, out_samples, out_samples_t
+                            free_cuda_memory()
+                            if args.low_vram:
+                                offload_zimage_conditioners(pipeline, vl_model)
             progress_bar.set_postfix(**logs)
 
             ############################################### End Train Loop ######################################################

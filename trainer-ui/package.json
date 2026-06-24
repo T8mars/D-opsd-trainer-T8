@@ -1,0 +1,149 @@
+{
+  "name": "d-opsd-trainer-ui",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "next dev --port 8675",
+    "build": "next build",
+    "build:standalone": "next build && node scripts/prepare-standalone.js",
+    "electron:dev": "electron electron/main.js",
+    "pack:win": "npm run build:standalone && electron-builder --win dir --x64",
+    "dist:win": "npm run build:standalone && electron-builder --win --x64",
+    "start": "next start --port 8675",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "lucide-react": "^0.475.0",
+    "next": "^15.5.9",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.20",
+    "electron": "^42.5.0",
+    "electron-builder": "^26.15.3",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  },
+  "build": {
+    "appId": "com.t8.dopsd.trainer",
+    "productName": "T8 D-OPSD Tranier",
+    "asar": false,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/standalone/**/*",
+      ".next/static/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../scripts",
+        "to": "workspace-template/scripts",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../trainer_runtime",
+        "to": "workspace-template/trainer_runtime",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/.pytest_cache/**"
+        ]
+      },
+      {
+        "from": "../z-image-turbo_self-distill-vlm",
+        "to": "workspace-template/z-image-turbo_self-distill-vlm",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../flux2-klein_self-distill-edit",
+        "to": "workspace-template/flux2-klein_self-distill-edit",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../flux2-klein-edit-self-distill-gt-ref",
+        "to": "workspace-template/flux2-klein-edit-self-distill-gt-ref",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      },
+      {
+        "from": "../requirements-trainer.txt",
+        "to": "workspace-template/requirements-trainer.txt"
+      },
+      {
+        "from": "../meta.json",
+        "to": "workspace-template/meta.json"
+      },
+      {
+        "from": "../features.json",
+        "to": "workspace-template/features.json"
+      },
+      {
+        "from": "../roadmap.md",
+        "to": "workspace-template/roadmap.md"
+      },
+      {
+        "from": "../SKILL.md",
+        "to": "workspace-template/SKILL.md"
+      },
+      {
+        "from": "../D-OPSD-Trainer.cmd",
+        "to": "workspace-template/D-OPSD-Trainer.cmd"
+      },
+      {
+        "from": "../docs",
+        "to": "workspace-template/docs",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

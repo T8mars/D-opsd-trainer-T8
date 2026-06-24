@@ -1,0 +1,22 @@
+{
+  "name": "D-OPSD Trainer",
+  "slug": "d-opsd-trainer",
+  "base_repository": "https://github.com/vvvvvjdy/D-OPSD",
+  "reference_repository": "https://github.com/ostris/ai-toolkit",
+  "workspace": "E:\\D-opsd-T8-Tranier",
+  "ui_style": "restrained-liquid-glass-production-tool",
+  "primary_runtime": {
+    "host_os": "Windows",
+    "preferred_training_backend": "WSL2 Ubuntu",
+    "gpu_profile": "NVIDIA GeForce RTX 4060 Ti 16GB"
+  },
+  "default_models": [
+    "Tongyi-MAI/Z-Image-Turbo",
+    "Qwen/Qwen3-VL-4B-Instruct",
+    "black-forest-labs/FLUX.2-klein-4B"
+  ],
+  "experimental_models": [
+    "black-forest-labs/FLUX.2-klein-9B"
+  ],
+  "updated_at": "2026-06-24"
+}

@@ -1,0 +1,8 @@
+[project]
+name = "dopsd-trainer-runtime"
+version = "0.1.0"
+description = "Runtime helpers for the D-OPSD Trainer"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
