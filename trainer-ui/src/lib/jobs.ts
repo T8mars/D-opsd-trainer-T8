@@ -3,7 +3,7 @@ import { execFile, spawn } from 'child_process';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
-import { bundledDatasets, combineDatasetSelections, findRegisteredDataset, validateDataset } from '@/lib/datasets';
+import { bundledDatasets, combineDatasetSelections, findRegisteredDataset, validateDataset, type DatasetSelectionInput } from '@/lib/datasets';
 import { resolveProjectRoot } from '@/lib/project';
 import { productionProfileForRecipe, recipes, type RecipeId, type RecipeProductionProfile } from '@/lib/recipes';
 import {
@@ -45,6 +45,7 @@ export type TrainerJob = {
   skipInitialSample?: boolean;
   datasetPath?: string;
   datasetPaths?: string[];
+  sampleDatasetPath?: string;
   datasetRows?: number;
   datasetValidRows?: number;
   datasetIssueCount?: number;
@@ -311,31 +312,37 @@ function profileEnvAssignments(
   ].filter(Boolean).join(' ');
 }
 
-function datasetEnvAssignmentsForDatasetPath(datasetPath?: string) {
+function datasetEnvAssignmentsForDatasetPath(datasetPath?: string, sampleDatasetPath?: string) {
   if (!datasetPath) return '';
   const datasetWslPath = toWslPath(resolveProjectPath(datasetPath));
   return [
     `DATA_PATH_TRAIN_JSONL=${bashQuote(datasetWslPath)}`,
-    `DATA_PATH_TEST_JSONL=${bashQuote(datasetWslPath)}`,
+    `DATA_PATH_TEST_JSONL=${bashQuote(toWslPath(resolveProjectPath(sampleDatasetPath ?? datasetPath)))}`,
   ].join(' ');
 }
 
-function datasetEnvAssignmentsForJob(job: Pick<TrainerJob, 'datasetPath'>) {
+function datasetEnvAssignmentsForJob(job: Pick<TrainerJob, 'datasetPath' | 'sampleDatasetPath'>) {
   if (!job.datasetPath) return '';
   const datasetWslPath = toWslPath(resolveProjectPath(job.datasetPath));
   return [
     `DATA_PATH_TRAIN_JSONL=${bashQuote(datasetWslPath)}`,
-    `DATA_PATH_TEST_JSONL=${bashQuote(datasetWslPath)}`,
+    `DATA_PATH_TEST_JSONL=${bashQuote(toWslPath(resolveProjectPath(job.sampleDatasetPath ?? job.datasetPath)))}`,
   ].join(' ');
 }
 
-function commandForProductionProfile(recipeId: RecipeId, expName: string, datasetPath?: string, trainingOverrides?: TrainingOverrides | TrainingOverridesV2) {
+function commandForProductionProfile(
+  recipeId: RecipeId,
+  expName: string,
+  datasetPath?: string,
+  trainingOverrides?: TrainingOverrides | TrainingOverridesV2,
+  sampleDatasetPath?: string,
+) {
   const profile = productionProfileForRecipe(recipeId);
   if (!profile) return commandForRecipeSmoke(recipeId, expName);
   const rootWsl = bashQuote(toWslPath(projectRoot()));
   return [
     'wsl -d Ubuntu-22.04 -- bash -lc',
-    `"cd ${rootWsl}; ${profileEnvAssignments(profile, expName, '../trainer-data/runs', datasetEnvAssignmentsForDatasetPath(datasetPath), trainingOverrides)} timeout ${timeoutForOverrides(profile, trainingOverrides)} bash ${profile.runnerScript}"`,
+    `"cd ${rootWsl}; ${profileEnvAssignments(profile, expName, '../trainer-data/runs', datasetEnvAssignmentsForDatasetPath(datasetPath, sampleDatasetPath), trainingOverrides)} timeout ${timeoutForOverrides(profile, trainingOverrides)} bash ${profile.runnerScript}"`,
   ].join(' ');
 }
 
@@ -349,6 +356,44 @@ function smokeOutputDir(expName: string) {
 
 function runOutputDir(expName: string) {
   return path.join('trainer-data', 'runs', expName);
+}
+
+function sampleJsonlPath(expName: string) {
+  return path.join('trainer-data', 'jobs', 'samples', `${shellSafeValue(expName)}.jsonl`);
+}
+
+async function writeCustomSampleJsonl(
+  recipeId: RecipeId,
+  datasetPath: string | undefined,
+  samplePrompts: string[] | undefined,
+  expName: string,
+) {
+  const prompts = (samplePrompts ?? []).map(prompt => prompt.trim()).filter(Boolean).slice(0, 16);
+  if (!datasetPath || !prompts.length) return undefined;
+
+  const raw = await fs.readFile(resolveProjectPath(datasetPath), 'utf-8');
+  const sourceRows = raw
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => JSON.parse(line) as Record<string, unknown>);
+  if (!sourceRows.length) return undefined;
+
+  const outputPath = resolveProjectPath(sampleJsonlPath(expName));
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const sampleRows = prompts.map((prompt, index) => ({
+    ...sourceRows[index % sourceRows.length],
+    user_prompt_en: prompt,
+    short_en: prompt,
+    medium_en: prompt,
+    detailed_en: prompt,
+    user_prompt_zh: prompt,
+    short_zh: prompt,
+    sample_source_recipe_id: recipeId,
+  }));
+
+  await fs.writeFile(outputPath, `${sampleRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf-8');
+  return sampleJsonlPath(expName);
 }
 
 function slug(value: string) {
@@ -479,14 +524,28 @@ async function preflightDraftDataset(recipeId: RecipeId, datasetPath?: string) {
   };
 }
 
-async function preflightDraftDatasetPaths(recipeId: RecipeId, datasetPath?: string, datasetPaths?: string[]) {
+function buildDatasetSelectionInputs(datasetPath?: string, datasetPaths?: string[], trainingConfig?: TrainingOverridesV2): DatasetSelectionInput[] {
   const selectedPaths = Array.from(new Set((datasetPaths?.length ? datasetPaths : datasetPath ? [datasetPath] : []).filter(Boolean)));
-  if (selectedPaths.length <= 1) {
+  const configuredDatasets = trainingConfig ? trainingConfig.datasets.items : undefined;
+  const weights = new Map((configuredDatasets ?? [])
+    .filter(item => item.path)
+    .map(item => [item.path as string, item.weight ?? 1]));
+  return selectedPaths.map(pathValue => ({
+    path: pathValue,
+    weight: weights.get(pathValue) ?? 1,
+  }));
+}
+
+async function preflightDraftDatasetPaths(recipeId: RecipeId, datasetPath?: string, datasetPaths?: string[], trainingConfig?: TrainingOverridesV2) {
+  const datasetSelectionInputs = buildDatasetSelectionInputs(datasetPath, datasetPaths, trainingConfig);
+  const selectedPaths = datasetSelectionInputs.map(item => typeof item === 'string' ? item : item.path);
+  const hasWeightedSelection = datasetSelectionInputs.some(item => typeof item !== 'string' && Math.round(Number(item.weight ?? 1)) !== 1);
+  if (selectedPaths.length <= 1 && !hasWeightedSelection) {
     const single = await preflightDraftDataset(recipeId, selectedPaths[0] ?? datasetPath);
     return single ? { ...single, datasetPaths: single.datasetPath ? [single.datasetPath] : [], note: undefined as string | undefined } : null;
   }
 
-  const combined = await combineDatasetSelections(selectedPaths, recipeId);
+  const combined = await combineDatasetSelections(datasetSelectionInputs, recipeId);
   if (combined.datasetIssueCount > 0) {
     throw new Error('Dataset issues must be fixed before launch');
   }
@@ -506,13 +565,21 @@ async function preflightLaunchDataset(job: TrainerJob) {
   }
 
   try {
-    const datasetPreflight = await preflightDraftDatasetPaths(job.recipeId, job.datasetPath, job.datasetPaths);
+    const trainingConfig = trainingConfigForJob(job);
+    const datasetPreflight = await preflightDraftDatasetPaths(job.recipeId, job.datasetPath, job.datasetPaths, trainingConfig);
     if (!datasetPreflight) return job;
+    const sampleDatasetPath = await writeCustomSampleJsonl(
+      job.recipeId,
+      datasetPreflight.datasetPath,
+      trainingConfig.sampling.samplePrompts,
+      job.expName,
+    );
 
     return {
       ...job,
       datasetPath: datasetPreflight.datasetPath,
       datasetPaths: datasetPreflight.datasetPaths,
+      sampleDatasetPath,
       datasetRows: datasetPreflight.datasetRows,
       datasetValidRows: datasetPreflight.datasetValidRows,
       datasetIssueCount: datasetPreflight.datasetIssueCount,
@@ -682,8 +749,14 @@ export async function createDraftJob(
   const profile = productionProfileForRecipe(base.id);
   const trainingConfig = normalizeTrainingOverrides(trainingOverrides);
   const trainingValues = defaultTrainingValues(base.id, profile, trainingConfig);
-  const datasetPreflight = await preflightDraftDatasetPaths(base.id, datasetPath, datasetPaths);
+  const datasetPreflight = await preflightDraftDatasetPaths(base.id, datasetPath, datasetPaths, trainingConfig);
   const expName = `${slug(base.shortName)}_${timestampSlug()}`;
+  const sampleDatasetPath = await writeCustomSampleJsonl(
+    base.id,
+    datasetPreflight?.datasetPath,
+    trainingConfig.sampling.samplePrompts,
+    expName,
+  );
   const verifiedProfileRecipe = Boolean(profile);
   const job: TrainerJob = {
     id: crypto.randomUUID(),
@@ -713,6 +786,7 @@ export async function createDraftJob(
     skipInitialSample: trainingValues.skipInitialSample,
     datasetPath: datasetPreflight?.datasetPath,
     datasetPaths: datasetPreflight?.datasetPaths,
+    sampleDatasetPath,
     datasetRows: datasetPreflight?.datasetRows,
     datasetValidRows: datasetPreflight?.datasetValidRows,
     datasetIssueCount: datasetPreflight?.datasetIssueCount,
@@ -726,7 +800,7 @@ export async function createDraftJob(
     currentStep: 0,
     command:
       verifiedProfileRecipe
-        ? commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig)
+        ? commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig, sampleDatasetPath)
         : `python scripts/check_runtime.py build-command --recipe-id ${base.id} --exp-name ${expName}`,
     notes: `${profile
       ? `Draft created from the UI. Start uses editable training controls on top of the recommended 16GB memory profile (${profile.label}).`
@@ -793,13 +867,17 @@ export async function cloneJob(id: string) {
     command: source.command.replace(source.expName, expName),
     notes: `Cloned from ${source.name}.`,
     source: 'cloned',
+    sampleDatasetPath: undefined,
     queuedAt: undefined,
     runner: undefined,
   };
+  const clonedConfig = trainingConfigForJob(cloned);
+  const sampleDatasetPath = await writeCustomSampleJsonl(source.recipeId, source.datasetPath, clonedConfig.sampling.samplePrompts, expName);
   cloned = {
     ...cloned,
+    sampleDatasetPath,
     command: productionProfileForRecipe(source.recipeId)
-      ? commandForProductionProfile(source.recipeId, expName, source.datasetPath, trainingConfigForJob(cloned))
+      ? commandForProductionProfile(source.recipeId, expName, source.datasetPath, clonedConfig, sampleDatasetPath)
       : cloned.command,
   };
 

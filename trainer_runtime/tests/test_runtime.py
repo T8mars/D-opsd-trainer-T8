@@ -271,11 +271,81 @@ class RuntimeTests(unittest.TestCase):
             "migrateTrainingOverridesToV2(trainingOverrides",
             "trainingConfig,",
             "defaultTrainingValues(base.id, profile, trainingConfig)",
-            "commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig)",
+            "commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig, sampleDatasetPath)",
             "trainingConfigForJob(job)",
             "profileEnvAssignments(profile, job.expName",
         ):
             self.assertIn(token, jobs_lib_source)
+
+    def test_sampling_config_accepts_custom_sample_prompt_table(self) -> None:
+        config_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "trainingConfig.ts").read_text(encoding="utf-8")
+        wizard_source = (PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx").read_text(encoding="utf-8")
+        i18n_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx").read_text(encoding="utf-8")
+
+        for token in (
+            "samplePrompts?: string[]",
+            "normalizeSamplePrompts",
+            "samplePrompts: normalizeSamplePrompts(sampling.samplePrompts)",
+            "samplePrompts: normalizeSamplePrompts(legacy.samplePrompts)",
+        ):
+            self.assertIn(token, config_source)
+
+        for token in (
+            "samplePromptText",
+            "samplePrompts",
+            "customSamplePrompts",
+            "样图提示词",
+            "一行一个",
+        ):
+            self.assertIn(token, wizard_source + i18n_source)
+
+    def test_runner_writes_custom_sample_jsonl_for_test_dataset(self) -> None:
+        jobs_lib_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts").read_text(encoding="utf-8")
+
+        for token in (
+            "sampleDatasetPath?: string",
+            "writeCustomSampleJsonl",
+            "sampleJsonlPath",
+            "samplePrompts",
+            "DATA_PATH_TEST_JSONL=${bashQuote(toWslPath(resolveProjectPath(sampleDatasetPath ?? datasetPath)))}",
+            "await writeCustomSampleJsonl(",
+            "sampleDatasetPath,",
+        ):
+            self.assertIn(token, jobs_lib_source)
+
+    def test_dataset_weights_flow_from_new_job_ui_into_combined_jsonl(self) -> None:
+        datasets_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "datasets.ts").read_text(encoding="utf-8")
+        jobs_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts").read_text(encoding="utf-8")
+        wizard_source = (PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx").read_text(encoding="utf-8")
+        i18n_source = (PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx").read_text(encoding="utf-8")
+
+        for token in (
+            "export type DatasetSelectionInput",
+            "normalizeDatasetSelectionInputs",
+            "weight: boundedDatasetWeight",
+            "for (let copyIndex = 0; copyIndex < weight; copyIndex += 1)",
+            "combineDatasetSelections(datasetSelections: DatasetSelectionInput[]",
+        ):
+            self.assertIn(token, datasets_source)
+
+        for token in (
+            "datasetSelectionInputs",
+            "trainingConfig.datasets.items",
+            "hasWeightedSelection",
+            "selectedPaths.length <= 1 && !hasWeightedSelection",
+            "combineDatasetSelections(datasetSelectionInputs, recipeId)",
+        ):
+            self.assertIn(token, jobs_source)
+
+        for token in (
+            "datasetWeights",
+            "updateDatasetWeight",
+            "datasetWeight",
+            "t('multiDatasetHelp')",
+            "datasets: datasetPaths.map",
+            "训练权重",
+        ):
+            self.assertIn(token, wizard_source + i18n_source)
 
     def test_smoke_scripts_expose_real_training_controls(self) -> None:
         expected_env = (
@@ -1709,6 +1779,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("5L2O5pi+5a2Y5Y246L29", source)
         self.assertIn("5o6o6I2QIDE2R0Ig6LW35q2l6YWN572u", source)
         self.assertIn("5qC35pys57yp5pS+", source)
+        self.assertIn("6K6t57uD5p2D6YeN", source)
+        self.assertIn("5qC35Zu+5o+Q56S66K+N", source)
         self.assertIn("5pWw5o2u6ZuG6Zi75aGe", source)
         self.assertIn("5Lu75Yqh", source)
         self.assertIn("5pWw5o2u6ZuG", source)
@@ -1731,6 +1803,17 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("CssAssets", source)
         self.assertIn("PagesChecked", source)
         self.assertIn("DefaultModelsCached", source)
+
+    def test_readme_documents_weighted_datasets_and_custom_sample_prompts(self) -> None:
+        readme_source = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        for token in (
+            "每个数据集设置训练权重",
+            "样图提示词",
+            "一行一个样图提示词",
+            "训练权重为整数 0-10",
+        ):
+            self.assertIn(token, readme_source)
 
     def test_new_job_wizard_preflights_dataset_pairs_before_draft_creation(self) -> None:
         page_path = PROJECT_ROOT / "trainer-ui" / "src" / "app" / "jobs" / "new" / "page.tsx"

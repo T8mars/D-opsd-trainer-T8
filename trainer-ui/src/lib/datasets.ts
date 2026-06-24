@@ -91,6 +91,11 @@ export type CombinedDatasetSelection = {
   sourcePaths: string[];
 };
 
+export type DatasetSelectionInput = string | {
+  path: string;
+  weight?: number;
+};
+
 const execFileAsync = promisify(execFile);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.bmp']);
 const CAPTION_EXTENSIONS = new Set(['.txt', '.caption', '.json']);
@@ -624,25 +629,50 @@ async function rewriteRowsForCombinedJsonl(datasetPath: string, recipeId: Recipe
   return rows;
 }
 
-export async function combineDatasetSelections(datasetPaths: string[], recipeId: RecipeId): Promise<CombinedDatasetSelection> {
-  const uniquePaths = Array.from(new Set(datasetPaths.map(item => item.trim()).filter(Boolean)));
-  if (!uniquePaths.length) throw new Error('At least one dataset must be selected');
+function boundedDatasetWeight(value: unknown) {
+  const weight = Number(value);
+  if (!Number.isFinite(weight)) return 1;
+  return Math.max(0, Math.min(10, weight));
+}
+
+function normalizeDatasetSelectionInputs(datasetSelections: DatasetSelectionInput[]) {
+  const normalized = new Map<string, { path: string; weight: number }>();
+  for (const item of datasetSelections) {
+    const pathValue = typeof item === 'string' ? item : item.path;
+    const pathKey = pathValue.trim();
+    if (!pathKey) continue;
+    normalized.set(pathKey, {
+      path: pathKey,
+      weight: boundedDatasetWeight(typeof item === 'string' ? 1 : item.weight),
+    });
+  }
+  return Array.from(normalized.values());
+}
+
+export async function combineDatasetSelections(datasetSelections: DatasetSelectionInput[], recipeId: RecipeId): Promise<CombinedDatasetSelection> {
+  const selections = normalizeDatasetSelectionInputs(datasetSelections);
+  if (!selections.length) throw new Error('At least one dataset must be selected');
   const nowId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
   const combinedDir = path.join(combinedDatasetRoot(), `selection-${nowId}-${crypto.randomUUID().slice(0, 8)}`);
   await fs.mkdir(combinedDir, { recursive: true });
 
   const sourcePaths: string[] = [];
   const rows: Record<string, unknown>[] = [];
-  for (const selectedPath of uniquePaths) {
-    const registered = await findRegisteredDataset(selectedPath, recipeId);
-    const datasetPath = registered?.path ?? selectedPath;
+  for (const selection of selections) {
+    const registered = await findRegisteredDataset(selection.path, recipeId);
+    const datasetPath = registered?.path ?? selection.path;
     const summary = await validateDataset(datasetPath, recipeId);
     if (!summary.ok) {
       throw new Error(`Dataset issues must be fixed before launch: ${datasetPath}`);
     }
     sourcePaths.push(datasetPath);
-    rows.push(...await rewriteRowsForCombinedJsonl(datasetPath, recipeId, combinedDir));
+    const weightedRows = await rewriteRowsForCombinedJsonl(datasetPath, recipeId, combinedDir);
+    const weight = Math.max(0, Math.round(selection.weight ?? 1));
+    for (let copyIndex = 0; copyIndex < weight; copyIndex += 1) {
+      rows.push(...weightedRows);
+    }
   }
+  if (!rows.length) throw new Error('At least one weighted dataset row is required');
 
   const combinedPath = path.join(combinedDir, 'data.jsonl');
   await fs.writeFile(combinedPath, rows.map(row => JSON.stringify(row)).join('\n') + '\n', 'utf-8');

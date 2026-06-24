@@ -104,6 +104,8 @@ $zhMemoryLaunch = ConvertFrom-Utf8Base64 "5pi+5a2Y5LiO5ZCv5Yqo"
 $zhLowVramOffload = ConvertFrom-Utf8Base64 "5L2O5pi+5a2Y5Y246L29"
 $zhRecommended16gb = ConvertFrom-Utf8Base64 "5o6o6I2QIDE2R0Ig6LW35q2l6YWN572u"
 $zhSampleScale = ConvertFrom-Utf8Base64 "5qC35pys57yp5pS+"
+$zhDatasetWeight = ConvertFrom-Utf8Base64 "6K6t57uD5p2D6YeN"
+$zhSamplePrompts = ConvertFrom-Utf8Base64 "5qC35Zu+5o+Q56S66K+N"
 $zhCommandPreview = ConvertFrom-Utf8Base64 "5ZG95Luk6aKE6KeI"
 $zhDatasetBlocked = ConvertFrom-Utf8Base64 "5pWw5o2u6ZuG6Zi75aGe"
 $zhDurableJobLedger = ConvertFrom-Utf8Base64 "5oyB5LmF5Lu75Yqh6LSm5pys"
@@ -123,7 +125,7 @@ $zhOpenFolder = ConvertFrom-Utf8Base64 "5omT5byA5paH5Lu25aS5"
 
 $pages = @(
     @{ Path = "/"; Required = @($brandTitle, $zhNewTraining, $zhDashboard, $zhJobs, $zhDatasets, $zhModels, $zhSettings, $zhChinese, "EN") },
-    @{ Path = "/jobs/new"; Required = @($zhNewTraining, $zhPairPreflight, $zhCreateDraft, $zhMultiDatasetSelection, $zhCreateDraftFromMerged, $zhMemoryLaunch, $zhLowVramOffload, $zhRecommended16gb, $zhSampleScale, $zhCommandPreview, $zhDatasetBlocked) },
+    @{ Path = "/jobs/new"; Required = @($zhNewTraining, $zhPairPreflight, $zhCreateDraft, $zhMultiDatasetSelection, $zhCreateDraftFromMerged, $zhDatasetWeight, $zhMemoryLaunch, $zhLowVramOffload, $zhRecommended16gb, $zhSampleScale, $zhSamplePrompts, $zhCommandPreview, $zhDatasetBlocked) },
     @{ Path = "/jobs"; Required = @($zhJobs, $zhDurableJobLedger, $zhGpuTelemetry, $zhJobLedger) },
     @{ Path = "/datasets"; Required = @($zhDatasets, "D-OPSD JSONL", $zhDatasetValidator, $zhDatasetPath, $zhImportDataset, $zhUploadImages, $zhCaptionFile, $zhMultiDatasetSelection, $zhCreateDraftFromMerged) },
     @{ Path = "/models"; Required = @($zhModels, "Hugging Face", $zhModelCache, $zhCustomModelPath, $zhOpenFolder) },

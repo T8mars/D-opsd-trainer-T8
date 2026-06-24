@@ -25,6 +25,7 @@ export type TrainingOverridesV2 = {
     sampleSteps?: number;
     sampleResolutionScale?: number;
     finalSampleResolutionScale?: number;
+    samplePrompts?: string[];
     skipInitialSample?: boolean;
     saveSamples?: boolean;
     saveCheckpoints?: boolean;
@@ -57,6 +58,7 @@ export type LegacyTrainingOverrides = {
   resolutionScale?: number;
   sampleResolutionScale?: number;
   finalSampleResolutionScale?: number;
+  samplePrompts?: string[];
   skipInitialSample?: boolean;
   saveSamples?: boolean;
   saveCheckpoints?: boolean;
@@ -119,6 +121,20 @@ function normalizeDatasetOverrides(datasets: DatasetTrainingOverride[] | undefin
   return normalized.length ? normalized : undefined;
 }
 
+function normalizeSamplePrompts(value: unknown) {
+  const rawPrompts = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/\r?\n/)
+      : [];
+  const prompts = rawPrompts
+    .map(prompt => String(prompt).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 16);
+
+  return prompts.length ? prompts : undefined;
+}
+
 export function normalizeTrainingConfigV2(config?: TrainingOverridesV2): TrainingOverridesV2 {
   const basics = config?.basics ?? {};
   const lora = config?.lora ?? {};
@@ -150,6 +166,7 @@ export function normalizeTrainingConfigV2(config?: TrainingOverridesV2): Trainin
       sampleSteps: boundedInt(sampling.sampleSteps, 0, 200000),
       sampleResolutionScale: boundedFloat(sampling.sampleResolutionScale, 0.125, 2),
       finalSampleResolutionScale: boundedFloat(sampling.finalSampleResolutionScale, 0.125, 2),
+      samplePrompts: normalizeSamplePrompts(sampling.samplePrompts),
       skipInitialSample: boolOrUndefined(sampling.skipInitialSample),
       saveSamples: boolOrUndefined(sampling.saveSamples),
       saveCheckpoints: boolOrUndefined(sampling.saveCheckpoints),
@@ -197,6 +214,7 @@ export function migrateTrainingOverridesToV2(legacy?: LegacyTrainingOverrides | 
       sampleSteps: boundedInt(legacy.sampleSteps, 0, 200000),
       sampleResolutionScale: boundedFloat(legacy.sampleResolutionScale, 0.125, 2),
       finalSampleResolutionScale: boundedFloat(legacy.finalSampleResolutionScale, 0.125, 2),
+      samplePrompts: normalizeSamplePrompts(legacy.samplePrompts),
       skipInitialSample: boolOrUndefined(legacy.skipInitialSample),
       saveSamples: boolOrUndefined(legacy.saveSamples),
       saveCheckpoints: boolOrUndefined(legacy.saveCheckpoints),
@@ -231,6 +249,7 @@ export function flattenTrainingConfigForRunner(config?: TrainingOverridesV2): Le
     sampleSteps: normalized.sampling.sampleSteps,
     sampleResolutionScale: normalized.sampling.sampleResolutionScale,
     finalSampleResolutionScale: normalized.sampling.finalSampleResolutionScale,
+    samplePrompts: normalized.sampling.samplePrompts,
     skipInitialSample: normalized.sampling.skipInitialSample,
     saveSamples: normalized.sampling.saveSamples,
     saveCheckpoints: normalized.sampling.saveCheckpoints,

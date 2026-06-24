@@ -98,6 +98,20 @@
       ]
     },
     {
+      "id": "weighted-dataset-selection",
+      "name": "Weighted dataset selection",
+      "status": "verified",
+      "scope": "Let New Job users select multiple datasets, set per-dataset training weights, and launch through a generated combined JSONL that repeats weighted rows.",
+      "evidence": [
+        "trainer-ui/src/components/NewJobWizard.tsx now shows a per-selected-dataset training weight input and stores the chosen weights in trainingOverrides.datasets",
+        "trainer-ui/src/lib/trainingConfig.ts normalizes V2 dataset item weights with bounded 0-10 values",
+        "trainer-ui/src/lib/datasets.ts accepts DatasetSelectionInput objects, normalizes weights, rewrites selected datasets into a combined JSONL, and repeats rows by rounded weight",
+        "trainer-ui/src/lib/jobs.ts maps trainingConfig.datasets.items into DatasetSelectionInput values and uses the combined JSONL path whenever multiple datasets are selected or a single selected dataset has a non-default weight",
+        "trainer_runtime.tests.test_runtime.RuntimeTests.test_dataset_weights_flow_from_new_job_ui_into_combined_jsonl passed after the red/green implementation",
+        "README.md now documents per-dataset training weights, and scripts/check_ui_smoke.ps1 verifies the Chinese New Job weight control on /jobs/new"
+      ]
+    },
+    {
       "id": "dopsd-command-builder",
       "name": "D-OPSD command builder",
       "status": "verified",
@@ -748,6 +762,20 @@
         "This verifies FLUX2 Identity 0.5-resolution one-step no-artifact, checkpoint, sample, and two-step sample/checkpoint artifact writing; FLUX2 Identity 0.5625-resolution one-step no-artifact training, checkpoint writing, sample writing, and combined sample/checkpoint artifact writing; FLUX2 Identity 0.625-resolution one-step no-artifact training, checkpoint writing, sample writing, and one-step/two-step/three-step/five-step combined sample/checkpoint artifact writing with SAMPLE_RESOLUTION_SCALE=0.5; FLUX2 Editing 0.3125-resolution one-step no-artifact training, checkpoint writing, and sample writing; FLUX2 Editing 0.375-resolution one-step no-artifact training, checkpoint writing, scaled sample writing, one-step scaled combined sample/checkpoint artifact writing, and two-step scaled combined sample/checkpoint artifact writing with SAMPLE_RESOLUTION_SCALE=0.5; FLUX2 Editing 0.4375-resolution one-step no-artifact training, checkpoint writing, and one-step/two-step scaled combined sample/checkpoint artifact writing with SAMPLE_RESOLUTION_SCALE=0.5; FLUX2 Editing 0.5-resolution one-step no-artifact training and one-step/two-step/three-step/five-step scaled combined sample/checkpoint artifact writing with SAMPLE_RESOLUTION_SCALE=0.5; FLUX2 Editing 0.5625-resolution one-step no-artifact training, checkpoint writing, scaled sample writing, and one-step/two-step/three-step/five-step scaled combined sample/checkpoint artifact writing; Z-Image 0.5-resolution two-step sample/checkpoint artifact writing; and Z-Image 0.75-resolution one-step sample/checkpoint artifact writing on RTX 4060 Ti 16GB. Z-Image 1.0-resolution no-artifact training currently OOMs, while native full-size 0.625 Identity inline sample writing, native full-size 0.375 Editing inline sample writing, 0.5 Editing artifact writing beyond five steps, 0.5625 Editing artifact writing beyond five steps, higher-than-0.5625 Editing profiles, higher-than-0.625 Identity profiles, 0.625 Identity artifact writing beyond five steps, much longer FLUX2 runs, and Diffusers group block-offload hook verification for final sampling remain unverified; browser-plugin live stream visual QA remains unavailable, but the live stream runtime/API path is verified by scripts/check_training_observability.ps1",
         "FLUX2 Identity zhenzhen long-run checkpoint evidence: at resolution_scale 0.625 with low_vram, 8-bit Adam, skip_initial_sample, no samples, and checkpoint_steps 100, UI/API job 6c3127cb-7b93-42a8-b492-98b9a64d2029 reached step 100 and wrote student/teacher LoRA checkpoint files before continuing to step 101. This verifies checkpoint saving for the current 1000-step request, not completion of the full 1000 steps yet.",
         "Completed long-run evidence for the current user dataset: FLUX2 Identity trained zhenzhen for 1000 steps at target_resolution 1024 and resolution_scale 0.625 with low_vram, 8-bit Adam, skip_initial_sample, save_samples false, and checkpoint_steps 100. The run wrote checkpoints at 100-step intervals through lora_gen_step_1000 and completed with runnerExitCode 0; the final checkpoint contains student/adapter_model.safetensors (3942832 bytes) and teacher/adapter_model.safetensors (1976792 bytes). This verifies the requested 1000-step checkpoint-only FLUX2 Identity run on RTX 4060 Ti 16GB, not production-quality samples or sample generation at this length."
+      ]
+    },
+    {
+      "id": "custom-sample-prompts",
+      "name": "Custom sample prompts",
+      "status": "verified",
+      "scope": "Allow New Job drafts to carry a custom sample prompt table and run samples from a generated test JSONL while preserving the selected training dataset.",
+      "evidence": [
+        "New Job UI now includes a Chinese-first sample prompt textarea that accepts one prompt per line and stores non-empty rows in trainingOverrides.samplePrompts.",
+        "trainer-ui/src/lib/trainingConfig.ts normalizes sampling.samplePrompts into TrainingOverridesV2 and keeps legacy override compatibility.",
+        "trainer-ui/src/lib/jobs.ts writes custom sample prompts to trainer-data/jobs/samples/<expName>.jsonl by copying selected dataset rows and overriding prompt fields, then passes that file as DATA_PATH_TEST_JSONL while keeping DATA_PATH_TRAIN_JSONL on the training dataset.",
+        "Targeted red-green tests test_sampling_config_accepts_custom_sample_prompt_table and test_runner_writes_custom_sample_jsonl_for_test_dataset passed after implementation.",
+        "README.md now documents one-sample-prompt-per-line behavior, and scripts/check_ui_smoke.ps1 verifies the Chinese New Job sample prompt control on /jobs/new.",
+        "Verification passed on 2026-06-24: python -m unittest discover -s trainer_runtime\\tests -v ran 80 tests OK, npm run typecheck --prefix trainer-ui passed, git diff --check passed with only Windows line-ending warnings, and scripts/check_ui_smoke.ps1 against http://127.0.0.1:8675 returned Ok true with 6 pages and 6 CSS assets."
       ]
     },
     {

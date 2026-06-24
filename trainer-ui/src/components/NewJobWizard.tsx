@@ -39,6 +39,7 @@ type TrainingForm = Required<Pick<
   | 'resolutionScale'
   | 'sampleResolutionScale'
   | 'finalSampleResolutionScale'
+  | 'samplePrompts'
   | 'skipInitialSample'
   | 'saveSamples'
   | 'saveCheckpoints'
@@ -85,6 +86,7 @@ function defaultTrainingForm(recipe = defaultRecipe): TrainingForm {
     resolutionScale: Number(profile.resolutionScale),
     sampleResolutionScale: Number(profile.sampleResolutionScale ?? 1),
     finalSampleResolutionScale: Number(profile.finalSampleResolutionScale ?? profile.sampleResolutionScale ?? 1),
+    samplePrompts: [],
     skipInitialSample: true,
     saveSamples: profile.saveSamples,
     saveCheckpoints: profile.saveCheckpoints,
@@ -134,11 +136,13 @@ export default function NewJobWizard() {
   const [selectedRecipeId, setSelectedRecipeId] = useState<RecipeId>('flux2-klein-identity');
   const [trainingOverrides, setTrainingOverrides] = useState<TrainingForm>(() => defaultTrainingForm(defaultRecipe));
   const [selectedDatasetPaths, setSelectedDatasetPaths] = useState<string[]>([]);
+  const [datasetWeights, setDatasetWeights] = useState<Record<string, number>>({});
   const [datasets, setDatasets] = useState<DatasetResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdJobName, setCreatedJobName] = useState<string | null>(null);
+  const [samplePromptText, setSamplePromptText] = useState('');
 
   const selectedRecipe = useMemo(
     () => recipes.find(recipe => recipe.id === selectedRecipeId) ?? recipes[0],
@@ -172,6 +176,7 @@ export default function NewJobWizard() {
     `MAX_TRAIN_STEPS=${trainingOverrides.maxTrainSteps}`,
     `SAMPLE_STEPS=${trainingOverrides.sampleSteps}`,
     `CHECKPOINT_STEPS=${trainingOverrides.checkpointSteps}`,
+    trainingOverrides.samplePrompts.length ? `SAMPLE_PROMPTS=${trainingOverrides.samplePrompts.length}` : '',
     `LEARNING_RATE_GEN=${trainingOverrides.learningRateGen}`,
     `BATCH_SIZE=${trainingOverrides.batchSize}`,
     `GRADIENT_ACCUMULATION_STEPS=${trainingOverrides.gradientAccumulationSteps}`,
@@ -213,9 +218,17 @@ export default function NewJobWizard() {
 
   useEffect(() => {
     setTrainingOverrides(defaultTrainingForm(selectedRecipe));
+    setSamplePromptText('');
   }, [selectedRecipe]);
 
   useEffect(() => {
+    setDatasetWeights(current => {
+      const next: Record<string, number> = {};
+      for (const dataset of recipeDatasets) {
+        next[dataset.path] = current[dataset.path] ?? 1;
+      }
+      return next;
+    });
     setSelectedDatasetPaths(current => {
       const available = recipeDatasets.map(dataset => dataset.path);
       const retained = current.filter(datasetPath => available.includes(datasetPath));
@@ -226,6 +239,7 @@ export default function NewJobWizard() {
   }, [recipeDatasets]);
 
   function toggleDatasetPath(datasetPath: string) {
+    setDatasetWeights(current => ({ ...current, [datasetPath]: current[datasetPath] ?? 1 }));
     setSelectedDatasetPaths(current => (
       current.includes(datasetPath)
         ? current.filter(item => item !== datasetPath)
@@ -243,6 +257,21 @@ export default function NewJobWizard() {
     setTrainingOverrides(current => ({ ...current, [field]: checked }));
   }
 
+  function updateDatasetWeight(datasetPath: string, value: string) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    setDatasetWeights(current => ({ ...current, [datasetPath]: Math.round(Math.max(0, Math.min(10, parsed))) }));
+  }
+
+  function updateSamplePromptText(value: string) {
+    setSamplePromptText(value);
+    const samplePrompts = value
+      .split(/\r?\n/)
+      .map(prompt => prompt.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    setTrainingOverrides(current => ({ ...current, samplePrompts }));
+  }
+
   async function createDraft() {
     const datasetPaths = selectedDatasets.map(dataset => dataset.path);
     if (!datasetPaths.length) {
@@ -257,11 +286,15 @@ export default function NewJobWizard() {
     setBusy(true);
     setError(null);
     setCreatedJobName(null);
+    const draftTrainingOverrides = {
+      ...trainingOverrides,
+      datasets: datasetPaths.map(datasetPath => ({ path: datasetPath, weight: datasetWeights[datasetPath] ?? 1 })),
+    };
     try {
       const response = await fetch('/api/jobs', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ recipeId: selectedRecipeId, datasetPath: datasetPaths[0], datasetPaths, trainingOverrides }),
+        body: JSON.stringify({ recipeId: selectedRecipeId, datasetPath: datasetPaths[0], datasetPaths, trainingOverrides: draftTrainingOverrides }),
       });
       const payload = (await response.json()) as CreateJobPayload;
       if (!response.ok || !payload.ok || !payload.job) {
@@ -356,6 +389,7 @@ export default function NewJobWizard() {
               <span className="text-ink-600">{t('to')}</span>
               <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-1">{t('createDraftFromMerged')}</span>
             </div>
+            <p className="mt-2 max-w-3xl text-xs leading-5 text-ink-400">{t('multiDatasetHelp')}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusPill label={selectedRecipe.shortName} tone="neutral" />
@@ -375,19 +409,34 @@ export default function NewJobWizard() {
           <div className="rounded-md border border-white/10 bg-black/20 p-3">
             <div className="mb-3 space-y-2">
               {recipeDatasets.map(dataset => (
-                <label key={`${dataset.id}-${dataset.path}`} className="flex items-start gap-3 rounded-md border border-white/10 bg-white/[0.04] p-3">
+                <div key={`${dataset.id}-${dataset.path}`} className="flex items-start gap-3 rounded-md border border-white/10 bg-white/[0.04] p-3">
                   <input
                     type="checkbox"
                     checked={selectedDatasetPaths.includes(dataset.path)}
                     className="mt-1 h-4 w-4 shrink-0 accent-cyan-300"
                     onChange={() => toggleDatasetPath(dataset.path)}
                   />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-white">{dataset.name}</span>
-                    <span className="mt-1 block break-all text-xs text-ink-400">{dataset.path}</span>
-                  </span>
-                  <StatusPill label={dataset.summary.ok ? t('valid') : t('issues')} tone={statusTone(dataset.summary.ok)} />
-                </label>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-white">{dataset.name}</div>
+                    <div className="mt-1 break-all text-xs text-ink-400">{dataset.path}</div>
+                  </div>
+                  {selectedDatasetPaths.includes(dataset.path) ? (
+                    <label className="w-24 shrink-0 text-xs text-ink-400">
+                      <span>{t('datasetWeight')}</span>
+                      <input
+                        className="mt-1 w-full rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-sm text-white outline-none focus:border-aqua-500/50"
+                        min={0}
+                        max={10}
+                        step={1}
+                        type="number"
+                        value={formatNumber(datasetWeights[dataset.path] ?? 1)}
+                        onChange={event => updateDatasetWeight(dataset.path, event.target.value)}
+                      />
+                    </label>
+                  ) : (
+                    <StatusPill label={dataset.summary.ok ? t('valid') : t('issues')} tone={statusTone(dataset.summary.ok)} />
+                  )}
+                </div>
               ))}
               {!recipeDatasets.length ? (
                 <div className="rounded-md border border-roseSoft-500/25 bg-roseSoft-500/[0.08] px-3 py-2 text-sm text-roseSoft-500">
@@ -568,6 +617,20 @@ export default function NewJobWizard() {
                 />
               </div>
             </div>
+
+            <label className="block rounded-md border border-white/10 bg-white/[0.04] p-3">
+              <span className="flex items-center justify-between gap-3 text-xs uppercase tracking-wide text-ink-400">
+                <span>{t('customSamplePrompts')}</span>
+                <span className="text-aqua-300">{trainingOverrides.samplePrompts.length}</span>
+              </span>
+              <textarea
+                className="mt-2 min-h-24 w-full resize-y rounded-md border border-white/10 bg-black/25 px-3 py-2 text-sm leading-5 text-white outline-none placeholder:text-ink-500 focus:border-aqua-500/50"
+                placeholder={t('samplePromptsPlaceholder')}
+                value={samplePromptText}
+                onChange={event => updateSamplePromptText(event.target.value)}
+              />
+              <span className="mt-2 block text-xs leading-5 text-ink-400">{t('samplePromptsHint')}</span>
+            </label>
 
             <div>
               <div className="mb-2 flex items-center justify-between gap-3 text-xs uppercase tracking-wide text-ink-400">
