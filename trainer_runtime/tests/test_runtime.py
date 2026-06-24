@@ -1664,6 +1664,14 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("0.625", checker_source)
         self.assertIn("0.5625", checker_source)
         self.assertIn("zimage_style_res05_artifacts_2step_202606221528", checker_source)
+        self.assertIn("RESOLUTION_SCALE=`${values.resolutionScale}", checker_source)
+        self.assertIn("MAX_TRAIN_STEPS=`${values.maxTrainSteps}", checker_source)
+        self.assertNotIn("RESOLUTION_SCALE=`${profile.resolutionScale}", checker_source)
+        self.assertNotIn("MAX_TRAIN_STEPS=`${profile.maxTrainSteps}", checker_source)
+        self.assertIn("recommended16gbProfile", checker_source)
+        self.assertIn("trainingScale", checker_source)
+        self.assertIn("sampleScale", checker_source)
+        self.assertNotIn("Recommended 16GB starter", checker_source)
 
         self.assertIn("scripts\\check_production_profiles.ps1", release_source)
         self.assertIn("Production profile contract", release_source)
@@ -1749,6 +1757,23 @@ class RuntimeTests(unittest.TestCase):
             "scripts/check_runtime.py settings",
         ):
             self.assertIn(token, source)
+
+    def test_wsl_shell_scripts_are_lf_normalized_for_bash(self) -> None:
+        attributes_path = PROJECT_ROOT / ".gitattributes"
+        self.assertTrue(attributes_path.exists(), ".gitattributes should keep WSL shell scripts LF-only on Windows checkouts")
+        attributes_source = attributes_path.read_text(encoding="utf-8")
+        self.assertIn("*.sh text eol=lf", attributes_source)
+
+        for script_name in (
+            "scripts/dopsd_wsl_env.sh",
+            "scripts/run_flux2_smoke.sh",
+            "scripts/run_flux2_editing_smoke.sh",
+            "scripts/run_zimage_smoke.sh",
+        ):
+            script_path = PROJECT_ROOT / script_name
+            data = script_path.read_bytes()
+            self.assertNotIn(b"\r\n", data, f"{script_name} must use LF line endings for bash under WSL")
+            self.assertIn(b"\n", data, f"{script_name} should be a text shell script")
 
     def test_ui_smoke_script_checks_key_pages_without_browser_runtime(self) -> None:
         script_path = PROJECT_ROOT / "scripts" / "check_ui_smoke.ps1"

@@ -105,13 +105,14 @@ $wizardSource = Get-Content -Raw -LiteralPath "trainer-ui\src\components\NewJobW
 
 Assert-Contains -Name "recipes source" -Haystack $recipesSource -Needle "productionProfile"
 Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "productionProfileForRecipe"
-Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "RESOLUTION_SCALE=`${profile.resolutionScale}"
-Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "MAX_TRAIN_STEPS=`${profile.maxTrainSteps}"
-Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_SAMPLES=1"
-Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_CHECKPOINTS=1"
-Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Recommended 16GB starter"
-Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Training scale"
-Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Sample scale"
+Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "defaultTrainingValues"
+Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "RESOLUTION_SCALE=`${values.resolutionScale}"
+Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "MAX_TRAIN_STEPS=`${values.maxTrainSteps}"
+Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_SAMPLES=`${values.saveSamples ? '1' : '0'}"
+Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_CHECKPOINTS=`${values.saveCheckpoints ? '1' : '0'}"
+Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "recommended16gbProfile"
+Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "trainingScale"
+Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "sampleScale"
 
 [pscustomobject]@{
     Ok = $true
