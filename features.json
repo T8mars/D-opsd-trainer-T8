@@ -5,10 +5,11 @@
       "id": "project-control-files",
       "name": "Project control files",
       "status": "verified",
-      "scope": "Create and maintain roadmap.md, SKILL.md, meta.json, and features.json.",
+      "scope": "Create and maintain public project metadata and release documentation through README.md, meta.json, and features.json.",
       "evidence": [
-        "roadmap.md created",
-        "SKILL.md created",
+        "Private planning documents were removed from the distributable repository by user request",
+        "README.md now documents user installation, launcher startup, WSL setup, model management, dataset import/editing, training workflow, packaging, and troubleshooting",
+        "Post documentation cleanup verification passed: repository source search found no private planning document references, python unittest discovery ran 75 tests OK, npm run typecheck passed, release packaging rebuilt with dist:win, the packaged workspace template omitted private planning docs, and packaged smoke printed ok true",
         "meta.json created",
         "features.json created",
         "Project context reread after compaction before continuing UI QA and documentation updates"

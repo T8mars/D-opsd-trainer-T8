@@ -148,8 +148,6 @@ Invoke-CheckedCommand -Name "FLUX2 Editing smoke shell syntax" -FilePath "wsl" -
 Invoke-CheckedCommand -Name "Z-Image smoke shell syntax" -FilePath "wsl" -ArgumentList @("-d", "Ubuntu-22.04", "--cd", "/mnt/e/D-opsd-T8-Tranier", "--", "bash", "-n", "scripts/run_zimage_smoke.sh") | Out-Null
 
 Assert-NoTrailingWhitespace -Files @(
-    "SKILL.md",
-    "roadmap.md",
     "features.json",
     "scripts\check_release_readiness.ps1",
     "scripts\check_ui_smoke.ps1",

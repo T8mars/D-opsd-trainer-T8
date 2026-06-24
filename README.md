@@ -1,96 +1,280 @@
-<h1 align="center">D-OPSD<br><sub><sup>On-Policy Self-Distillation for Continuously Tuning Step-Distilled Diffusion Models</sup></sub></h1>
+# T8 D-OPSD Tranier
 
-<div align="center">
+T8 D-OPSD Tranier 是一个面向 Windows + NVIDIA GPU 的本地 D-OPSD 模型训练器。它以 [vvvvvjdy/D-OPSD](https://github.com/vvvvvjdy/D-OPSD) 为训练核心，参考 [ostris/ai-toolkit](https://github.com/ostris/ai-toolkit) 的工作台体验，提供中文优先的液态玻璃风格 UI、模型管理、数据集导入、任务队列、日志、损失曲线、样图和 LoRA checkpoint 管理。
 
-[![Project Page](https://img.shields.io/badge/Official%20Site-333399.svg?logo=homepage)](https://vvvvvjdy.github.io/d-opsd/)&#160;
-  <a href="https://github.com/vvvvvjdy/D-OPSD"><img src="https://img.shields.io/badge/GitHub(DOPSD)-9E95B7?logo=github"></a> &nbsp;
-    <a href="https://github.com/Tongyi-MAI/Z-Image"><img src="https://img.shields.io/badge/GitHub(ZImage)-9E95B7?logo=github"></a> &nbsp;
-<a href="https://arxiv.org/abs/2605.05204" target="_blank"><img src="https://img.shields.io/badge/Paper-b5212f.svg?logo=arxiv" height="21px"></a>
+当前默认面向单卡 16GB 显存环境验证，硬件基线为 NVIDIA GeForce RTX 4060 Ti 16GB。
 
-</div>
+## 主要功能
 
-<p align="center">
-  <img src="assets/method_01.jpg" alt="Result" style="width:100%;">
-</p>
+- 中文默认 UI，可切换英文。
+- Windows 启动器和 Electron 桌面版。
+- WSL2 Ubuntu 后端训练环境自动引导。
+- Hugging Face 模型缓存检测、下载状态、自定义模型路径和打开模型文件夹。
+- 支持 D-OPSD JSONL 数据集，也支持上传图片和同名打标文件生成托管数据集。
+- 托管数据集支持新增图片、编辑打标文本、删除图片和删除数据集。
+- 新建训练任务时可选择多个数据集合并训练。
+- 单 GPU FIFO 任务队列、任务克隆、停止、删除、日志查看、输出目录打开。
+- 16GB 显存安全默认值：low VRAM、8-bit Adam、分辨率缩放、tiled VAE、可选 block offload。
+- Electron 主进程日志写入文件，避免 Windows GUI 下 stdout/stderr broken pipe 弹窗。
 
-### 🛕 Environment Setup
-```bash
-git clone https://github.com/vvvvvjdy/D-OPSD.git
-conda create -n dopsd python=3.12 -y
-conda activate dopsd
-pip install -r requirements.txt
+## 系统要求
+
+- Windows 10/11。
+- NVIDIA GPU，建议至少 16GB VRAM。
+- 已安装可用的 NVIDIA 驱动，`nvidia-smi` 能正常运行。
+- WSL2 和 Ubuntu-22.04。
+- PowerShell 7 推荐用于完整发布检查。
+- 足够磁盘空间。默认三套模型缓存约 130GB。
+- Hugging Face token。部分模型可能需要先在 Hugging Face 页面接受许可。
+
+## 直接安装使用
+
+1. 打开 GitHub Release：<https://github.com/T8mars/D-opsd-trainer-T8/releases/tag/v0.1.0>
+2. 下载以下任意一种：
+   - `T8.D-OPSD.Tranier.Setup.0.1.0.exe`：安装版。
+   - `T8.D-OPSD.Tranier.0.1.0.exe`：便携版。
+3. 启动 `T8 D-OPSD Tranier`。
+4. 首次运行后，应用会把可写工作区复制到：
+
+```text
+%APPDATA%\d-opsd-trainer-ui\workspace
 ```
-****
 
+5. 在 PowerShell 中进入该工作区，初始化 WSL 训练环境：
 
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_wsl_trainer.ps1
+```
 
-### 🍬 Training 
+6. 回到应用的「模型」页，检查默认模型是否已缓存。没有缓存时可下载模型，或给每个模型设置自定义本地路径。
+7. 在「数据集」页导入图片和打标文件。
+8. 在「新建训练」页选择配方、数据集和 16GB 推荐配置，创建草稿后启动训练。
+9. 在「任务」页查看 GPU 状态、实时日志、损失、样图、checkpoint 和输出目录。
 
-#### 1. D-OPSD Z-Image-Turbo LoRA training with self-distilled vlm context (align with our paper):
+## 从源码运行
 
-Refer to [ (z-image-turbo_self-distill-vlm)](z-image-turbo_self-distill-vlm/README.md) for training guidance.
+```powershell
+git clone https://github.com/T8mars/D-opsd-trainer-T8.git
+cd D-opsd-trainer-T8
+npm install --prefix trainer-ui
+.\D-OPSD-Trainer.cmd
+```
 
-#### 2. D-OPSD FLUX2-klein LoRA training with self-distilled eidting branch context for scenario of high id accuracy requirement:
+默认地址是：
 
-Refer to [ (flux2-klein_self-distill-edit)](flux2-klein_self-distill-edit/README.md) for training guidance and more discussion.
+```text
+http://127.0.0.1:8675
+```
 
-#### 3. D-OPSD FLUX2-klein LoRA training for image editing with self-distilled target image as reference imgae in teacher:
+无浏览器启动：
 
-Refer to [ (flux2-klein-edit_self-distill-edit)](flux2-klein-edit-self-distill-gt-ref/README.md) for training guidance and more discussion.
+```powershell
+.\D-OPSD-Trainer.cmd -NoBrowser
+```
 
-****
+指定端口：
 
-### 🍬 Evaluation
+```powershell
+.\D-OPSD-Trainer.cmd -Port 8680
+```
 
-Refer to [ (z-image-turbo_self-distill-vlm-eval)](z-image-turbo_self-distill-vlm/eval/README.md) for evaluation guidance with Z-Image-Turbo and more discussion.
+仅做启动器 smoke test：
 
-****
+```powershell
+.\D-OPSD-Trainer.cmd -NoBrowser -SmokeTest -Port 18771 -TimeoutSeconds 120
+```
 
+## 初始化训练后端
 
-### 🎀 Highlight
+源码工作区或 Electron 工作区都可以运行：
 
-D-OPSD is an on-policy self-distillation training framework for diffusion models especially timestep-distilled ones. It features in:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_wsl_trainer.ps1
+```
 
-- D-OPSD identify an emergent property of modern text to image diffusion models with
-LLM/VLM encoders and utilize this property to the continuous tuning of step-distilled
-diffusion model.
-- D-OPSD is a novel diffusion models on-policy self-distillation framework. By
-assigning the same model two roles with different contexts, D-OPSD enables supervised
-tuning on the student’s own roll-outs without requiring any external reward function or
-extra modules.
-- D-OPSD is validated in different settings. The results show that our method enables
-the model to learn new concepts, styles, and domain preferences while preserving its
-original few-step inference capability and previous knowledge.
+脚本会在 WSL 中创建或更新：
 
+```text
+trainer-data/venvs/dopsd
+trainer-data/hf-home
+trainer-data/pip-cache
+trainer-data/triton-cache
+```
 
+训练脚本会通过 `scripts/dopsd_wsl_env.sh` 设置 Hugging Face、pip、Triton 和 torch extension 缓存路径。
 
----
+## 模型管理
 
+默认模型：
 
-<p align="center">
-   <figcaption style="text-align: center; margin-top: 10px; font-size: 0.92em;">
-           In full fine-tuning, D-OPSD adapts the model toward the target domain (anime) while retaining original-domain knowledge and few-step inference capability.
-        </figcaption>
-  <img src="assets/full_compare_01.jpg" alt="Result" style="width:96%;">
-</p>
+- `Tongyi-MAI/Z-Image-Turbo`
+- `Qwen/Qwen3-VL-4B-Instruct`
+- `black-forest-labs/FLUX.2-klein-4B`
 
----
+实验模型：
 
+- `black-forest-labs/FLUX.2-klein-9B`
 
-<p align="center">
-   <figcaption style="text-align: center; margin-top: 10px; font-size: 0.92em;">
-           In small customized LoRA training, D-OPSD learns new concepts from only a few image-text pairs while maintaining few-step generation quality and generalizing to unseen prompts.
-        </figcaption>
-  <img src="assets/lora_compare_01.jpg" alt="Result" style="width:90%;">
-</p>
+模型页支持：
 
----
+- 查看缓存状态、快照数量、大小和主快照路径。
+- 设置每个模型的自定义本地路径。
+- 直接打开模型文件夹。
+- 查看 gated/auth 状态。
 
+默认 Hugging Face 缓存路径：
 
+```text
+trainer-data/hf-home/hub
+```
 
+自定义路径配置保存到：
 
-### 🌺 Citation
-If you find D-OPSD useful, please kindly cite our paper:
+```text
+trainer-data/models/custom-model-paths.json
+```
+
+## 数据集使用
+
+数据集页支持两类数据：
+
+- D-OPSD JSONL：直接验证已有 `data.jsonl`。
+- 托管数据集：上传图片和同名打标文件后，由 UI 生成训练用 JSONL。
+
+支持的打标文件：
+
+- `image_name.txt`
+- `image_name.caption`
+- `image_name.json`
+
+托管数据集导入后可以：
+
+- 单独新增图片。
+- 编辑每张图片的提示词/打标文本。
+- 删除单张图片。
+- 删除整个数据集。
+- 在新建训练任务中选择多个数据集合并训练。
+
+托管数据默认保存到：
+
+```text
+trainer-data/datasets/managed
+```
+
+## 训练流程
+
+1. 打开「新建训练」。
+2. 选择训练配方：
+   - FLUX2 Klein Identity
+   - FLUX2 Klein Editing
+   - Z-Image Turbo VLM
+3. 选择一个或多个数据集。
+4. 使用默认的 16GB 推荐配置，或按需调整步数、样图、checkpoint、显存选项。
+5. 创建草稿。
+6. 在「任务」页启动任务。
+7. 训练过程中查看日志、loss、GPU 占用和产物。
+8. 训练结束后打开输出目录，检查 LoRA checkpoint。
+
+当前已验证的 16GB 入门配置：
+
+- FLUX2 Identity：`RESOLUTION_SCALE=0.625`，样图缩放 `0.5`，5 步样图和 checkpoint。
+- FLUX2 Editing：`RESOLUTION_SCALE=0.5625`，样图缩放 `0.5`，5 步样图和 checkpoint。
+- Z-Image Turbo：`RESOLUTION_SCALE=0.5`，2 步样图和 checkpoint。
+
+更高分辨率、更长步数、FLUX2 9B 或 block offload 组合需要重新做显存验证。
+
+## 低显存策略
+
+训练器包含以下低显存能力：
+
+- low VRAM 模式。
+- 8-bit Adam。
+- 分辨率缩放和样图分辨率缩放。
+- tiled VAE encode/decode。
+- 冻结组件阶段性转移到 CPU。
+- 可选 Diffusers group block offload。该能力保留为实验选项，不作为默认稳定配置。
+
+推荐先使用 UI 默认的 16GB 配置，确认数据集和 checkpoint 能正常跑通，再逐步提高分辨率或训练步数。
+
+## 常见问题
+
+### 停止训练后 GPU 仍然满载
+
+任务页的停止按钮会终止 WSL runner 和训练子进程组。若 GPU 仍然满载，请在任务页刷新状态，并检查是否还有其他 Python、Accelerate、DeepSpeed 或手动启动的训练进程。
+
+可用命令：
+
+```powershell
+wsl -d Ubuntu-22.04 -- bash -lc "ps -ef | grep -E 'train_dopsd|accelerate|deepspeed|runner.sh' | grep -v grep || true"
+nvidia-smi
+```
+
+### Electron 弹出 broken pipe / EPIPE
+
+当前版本已把 Electron 主进程和 Next 子进程输出改为安全文件日志，日志位置：
+
+```text
+%APPDATA%\d-opsd-trainer-ui\logs\electron-main.log
+```
+
+### 模型显示 gated 或 missing
+
+先确认 Hugging Face token 可用，并在对应模型页面接受许可。之后在模型页刷新缓存状态，或设置已经下载好的本地模型路径。
+
+### 端口 8675 被占用
+
+源码启动时可以换端口：
+
+```powershell
+.\D-OPSD-Trainer.cmd -Port 8680
+```
+
+### WSL 后端不可用
+
+确认 WSL2 和 Ubuntu-22.04 已安装：
+
+```powershell
+wsl --status
+wsl -l -v
+```
+
+## 开发和验证
+
+常用检查：
+
+```powershell
+python -m unittest discover -s trainer_runtime\tests -v
+npm run typecheck --prefix trainer-ui
+powershell -ExecutionPolicy Bypass -File scripts\check_ui_smoke.ps1 -BaseUrl http://127.0.0.1:8675 -TimeoutSeconds 30
+```
+
+构建 Electron 目录包：
+
+```powershell
+npm run pack:win --prefix trainer-ui
+```
+
+构建安装包和便携版：
+
+```powershell
+npm run dist:win --prefix trainer-ui
+```
+
+完整发布检查建议使用 PowerShell 7：
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\check_release_readiness.ps1 -BaseUrl http://127.0.0.1:8675 -UiTimeoutSeconds 30
+```
+
+## 上游项目
+
+训练核心来自 D-OPSD：
+
+- GitHub：<https://github.com/vvvvvjdy/D-OPSD>
+- Paper：<https://arxiv.org/abs/2605.05204>
+
+如果这个训练器或 D-OPSD 对你有帮助，请引用原论文：
+
 ```bibtex
 @article{jiang2026dopsd,
       title={D-OPSD: On-Policy Self-Distillation for Continuously Tuning Step-Distilled Diffusion Models},

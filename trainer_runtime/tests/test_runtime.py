@@ -1936,8 +1936,6 @@ class RuntimeTests(unittest.TestCase):
             "../requirements-trainer.txt",
             "../meta.json",
             "../features.json",
-            "../roadmap.md",
-            "../SKILL.md",
             "../docs",
         ):
             self.assertIn(token, extra_resources)
