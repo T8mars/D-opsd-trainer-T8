@@ -30,7 +30,6 @@ type CreateJobPayload = {
 type TrainingForm = Required<Pick<
   TrainingOverrides,
   | 'maxTrainSteps'
-  | 'epochs'
   | 'learningRateGen'
   | 'batchSize'
   | 'gradientAccumulationSteps'
@@ -51,7 +50,6 @@ type TrainingForm = Required<Pick<
 
 type NumericTrainingField =
   | 'maxTrainSteps'
-  | 'epochs'
   | 'learningRateGen'
   | 'batchSize'
   | 'gradientAccumulationSteps'
@@ -78,7 +76,6 @@ function defaultTrainingForm(recipe = defaultRecipe): TrainingForm {
   const maxTrainSteps = recipe.defaultSteps;
   return {
     maxTrainSteps,
-    epochs: 2,
     learningRateGen: Number(recipe.defaultLr),
     batchSize: 1,
     gradientAccumulationSteps: 1,
@@ -173,7 +170,6 @@ export default function NewJobWizard() {
     `SAMPLE_RESOLUTION_SCALE=${trainingOverrides.sampleResolutionScale}`,
     `FINAL_SAMPLE_RESOLUTION_SCALE=${trainingOverrides.finalSampleResolutionScale}`,
     `MAX_TRAIN_STEPS=${trainingOverrides.maxTrainSteps}`,
-    `EPOCHS=${trainingOverrides.epochs}`,
     `SAMPLE_STEPS=${trainingOverrides.sampleSteps}`,
     `CHECKPOINT_STEPS=${trainingOverrides.checkpointSteps}`,
     `LEARNING_RATE_GEN=${trainingOverrides.learningRateGen}`,
@@ -330,7 +326,7 @@ export default function NewJobWizard() {
                 <div className="rounded-md border border-mint-500/20 bg-mint-500/[0.08] p-3">
                   <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-mint-500">
                     <Cpu className="h-3.5 w-3.5" />
-                    {t('verified16gbProfile')}
+                    {t('recommended16gbProfile')}
                   </div>
                   <div className="text-sm text-ink-200">{recipe.memoryProfile}</div>
                   <div className="mt-2 text-xs text-ink-400">{recipe.productionProfile.maxTrainSteps} {t('steps')} | {t('artifactsOn')}</div>
@@ -484,7 +480,6 @@ export default function NewJobWizard() {
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                 {([
                   ['maxTrainSteps', t('totalSteps'), 1, 200000, 100],
-                  ['epochs', t('epochs'), 1, 10000, 1],
                   ['learningRateGen', t('learningRate'), 0.00000001, 1, 0.000001],
                   ['batchSize', t('batchSize'), 1, 64, 1],
                   ['gradientAccumulationSteps', t('gradientAccumulation'), 1, 1024, 1],
@@ -601,7 +596,7 @@ export default function NewJobWizard() {
                 <HardDrive className="h-4 w-4 text-mint-500" />
                 {t('commandPreview')}
               </div>
-              <StatusPill label={t('verified16gbProfile')} tone="good" />
+              <StatusPill label={t('recommended16gbProfile')} tone="good" />
             </div>
             <div className="rounded-md bg-black/35 p-3 font-mono text-xs leading-6 text-ink-300">
               {commandPreview}
@@ -616,7 +611,7 @@ export default function NewJobWizard() {
               {[
                 ['VRAM', 'low + tiled VAE'],
                 [t('dataset'), selectedDatasets.length > 1 ? t('createDraftFromMerged') : selectedDataset?.name ?? '-'],
-                [t('run'), selectedProfile.verifiedRun],
+                [t('defaultProfile'), t('recommended16gbProfile')],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-md bg-white/[0.04] p-2">
                   <div className="flex items-center gap-1.5 text-xs text-ink-400">

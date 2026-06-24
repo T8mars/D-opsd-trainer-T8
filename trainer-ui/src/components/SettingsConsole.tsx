@@ -314,7 +314,7 @@ export default function SettingsConsole() {
 
       {settings ? (
         <section className="solid-panel rounded-lg p-4">
-          <SectionTitle icon={ShieldCheck} title={t('verified16gbProfiles')} />
+          <SectionTitle icon={ShieldCheck} title={t('recommended16gbProfiles')} />
           <div className="grid gap-3 xl:grid-cols-3">
             {settings.production_profiles.map(profile => (
               <article key={profile.id} className="min-w-0 rounded-md border border-white/10 bg-white/[0.04] p-3">
@@ -337,9 +337,6 @@ export default function SettingsConsole() {
                       <span className="truncate text-white">{value}</span>
                     </div>
                   ))}
-                </div>
-                <div className="mt-3 break-all rounded-md bg-black/25 p-2 font-mono text-xs leading-5 text-ink-400">
-                  {profile.evidence[0]}
                 </div>
               </article>
             ))}

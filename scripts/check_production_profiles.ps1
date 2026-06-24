@@ -109,7 +109,7 @@ Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "RESOLUTION_SC
 Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "MAX_TRAIN_STEPS=`${profile.maxTrainSteps}"
 Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_SAMPLES=1"
 Assert-Contains -Name "jobs source" -Haystack $jobsSource -Needle "SAVE_CHECKPOINTS=1"
-Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Verified 16GB profile"
+Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Recommended 16GB starter"
 Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Training scale"
 Assert-Contains -Name "wizard source" -Haystack $wizardSource -Needle "Sample scale"
 

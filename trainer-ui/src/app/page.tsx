@@ -76,7 +76,7 @@ export default function DashboardPage() {
             <div className="space-y-2 text-sm text-ink-300">
               <div className="flex items-center gap-2">
                 <Gauge className="h-4 w-4 text-aqua-300" />
-                {recipe.productionProfile.maxTrainSteps} {t('verifiedSteps')} · {t('scale')} {recipe.productionProfile.resolutionScale}
+                {recipe.productionProfile.maxTrainSteps} {t('recommendedStarterSteps')} · {t('scale')} {recipe.productionProfile.resolutionScale}
               </div>
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-mint-500" />

@@ -167,7 +167,6 @@ class RuntimeTests(unittest.TestCase):
             "trainingOverrides",
             "maxTrainSteps",
             "learningRateGen",
-            "epochs",
             "gradientAccumulationSteps",
             "batchSize",
             "checkpointSteps",
@@ -186,7 +185,6 @@ class RuntimeTests(unittest.TestCase):
             "训练参数",
             "总步数",
             "学习率",
-            "训练轮数",
             "梯度累积",
             "批大小",
             "保存间隔",
@@ -195,6 +193,15 @@ class RuntimeTests(unittest.TestCase):
             "跳过首采样",
         ):
             self.assertIn(text, i18n_source)
+
+        for forbidden in (
+            "| 'epochs'",
+            "epochs: 2",
+            "`EPOCHS=${trainingOverrides.epochs}`",
+            "['epochs', t('epochs')",
+        ):
+            self.assertNotIn(forbidden, wizard_source)
+        self.assertNotIn("训练轮数", i18n_source)
 
     def test_job_training_overrides_flow_into_runner_environment(self) -> None:
         jobs_lib_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts"
@@ -206,6 +213,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("normalizeTrainingOverrides", jobs_lib_source)
         self.assertIn("profileEnvAssignments(profile, job.expName", jobs_lib_source)
         self.assertIn("timeoutForJob(profile, job)", jobs_lib_source)
+        self.assertIn("internalEpochsForMaxTrainSteps", jobs_lib_source)
+        self.assertNotIn("epochs: overrides?.epochs ?? 2", jobs_lib_source)
 
         for env_var in (
             "EPOCHS",
@@ -222,9 +231,54 @@ class RuntimeTests(unittest.TestCase):
         ):
             self.assertIn(f"{env_var}=", jobs_lib_source)
 
+    def test_training_config_v2_schema_migration_and_bounds(self) -> None:
+        config_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "trainingConfig.ts"
+        source = config_path.read_text(encoding="utf-8")
+
+        for token in (
+            "export type TrainingOverridesV2",
+            "basics:",
+            "lora:",
+            "optimizer:",
+            "sampling:",
+            "datasets:",
+            "memory:",
+            "advancedDopsd:",
+            "migrateTrainingOverridesToV2",
+            "normalizeTrainingConfigV2",
+            "version: 2",
+        ):
+            self.assertIn(token, source)
+
+        for bounded_token in (
+            "maxTrainSteps: boundedInt(legacy.maxTrainSteps, 1, 200000)",
+            "sampleSteps: boundedInt(legacy.sampleSteps, 0, 200000)",
+            "learningRateGen: boundedFloat(legacy.learningRateGen, 1e-8, 1)",
+            "captionDropout: boundedFloat(legacy.captionDropout, 0, 1)",
+            "weight: boundedFloat(dataset.weight, 0, 10)",
+            "rank: boundedInt(legacy.networkDim ?? legacy.rank, 1, 512)",
+            "tileSize: boundedInt(legacy.tileSize, 16, 512)",
+        ):
+            self.assertIn(bounded_token, source)
+
+    def test_jobs_store_v2_training_config_and_build_runner_from_it(self) -> None:
+        jobs_lib_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "jobs.ts"
+        jobs_lib_source = jobs_lib_path.read_text(encoding="utf-8")
+
+        for token in (
+            "@/lib/trainingConfig",
+            "trainingConfig?: TrainingOverridesV2",
+            "migrateTrainingOverridesToV2(trainingOverrides",
+            "trainingConfig,",
+            "defaultTrainingValues(base.id, profile, trainingConfig)",
+            "commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig)",
+            "trainingConfigForJob(job)",
+            "profileEnvAssignments(profile, job.expName",
+        ):
+            self.assertIn(token, jobs_lib_source)
+
     def test_smoke_scripts_expose_real_training_controls(self) -> None:
         expected_env = (
-            "EPOCHS",
             "LEARNING_RATE_GEN",
             "BATCH_SIZE",
             "GRADIENT_ACCUMULATION_STEPS",
@@ -248,6 +302,7 @@ class RuntimeTests(unittest.TestCase):
         ):
             with self.subTest(relative=relative):
                 source = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('EPOCHS="${EPOCHS:-$((MAX_TRAIN_STEPS + 1))}"', source)
                 for token in expected_env:
                     self.assertIn(token, source)
                 for token in expected_args:
@@ -1357,7 +1412,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(profiles["flux2-klein-editing"]["sample_resolution_scale"], "0.5")
         self.assertEqual(profiles["z-image-turbo-vlm"]["max_train_steps"], 2)
 
-    def test_ui_uses_verified_production_profiles_for_new_job_defaults(self) -> None:
+    def test_ui_uses_recommended_production_profiles_for_new_job_defaults(self) -> None:
         recipes_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "recipes.ts"
         wizard_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx"
         i18n_path = PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx"
@@ -1373,14 +1428,13 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("resolutionScale: '0.5625'", recipes_source)
         self.assertIn("resolutionScale: '0.5'", recipes_source)
         self.assertIn("sampleResolutionScale: '0.5'", recipes_source)
-        self.assertIn("verifiedRun", recipes_source)
 
-        self.assertIn("verified16gbProfile", wizard_source)
+        self.assertIn("recommended16gbProfile", wizard_source)
         self.assertIn("trainingScale", wizard_source)
         self.assertIn("sampleScale", wizard_source)
         self.assertIn("trainingParameters", wizard_source)
-        self.assertIn("Verified 16GB profile", i18n_source)
-        self.assertIn("已验证 16GB 配置", i18n_source)
+        self.assertIn("Recommended 16GB starter", i18n_source)
+        self.assertIn("推荐 16GB 起步配置", i18n_source)
         self.assertIn("Training scale", i18n_source)
         self.assertIn("Sample scale", i18n_source)
         self.assertIn("Training parameters", i18n_source)
@@ -1397,6 +1451,28 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("SAMPLE_RESOLUTION_SCALE=${values.sampleResolutionScale}", jobs_source)
         self.assertIn("Start uses editable training controls", jobs_source)
         self.assertNotIn("Start runs the verified low-VRAM smoke profile", jobs_source)
+        self.assertNotIn("Evidence: ${profile.verifiedRun}", jobs_source)
+
+    def test_primary_user_ui_hides_test_verification_wording(self) -> None:
+        user_ui_paths = [
+            PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "i18n.tsx",
+            PROJECT_ROOT / "trainer-ui" / "src" / "lib" / "recipes.ts",
+            PROJECT_ROOT / "trainer-ui" / "src" / "components" / "NewJobWizard.tsx",
+            PROJECT_ROOT / "trainer-ui" / "src" / "components" / "SettingsConsole.tsx",
+            PROJECT_ROOT / "trainer-ui" / "src" / "app" / "page.tsx",
+        ]
+        combined_source = "\n".join(path.read_text(encoding="utf-8") for path in user_ui_paths)
+
+        for forbidden in (
+            "已验证",
+            "烟测",
+            "Verified 16GB profile",
+            "verified16gbProfile",
+            "verified16gbProfiles",
+            "verifiedRun",
+            "profile.evidence[0]",
+        ):
+            self.assertNotIn(forbidden, combined_source)
 
     def test_ui_shell_defaults_to_chinese_with_language_toggle_and_t8_brand(self) -> None:
         shell_path = PROJECT_ROOT / "trainer-ui" / "src" / "components" / "AppShell.tsx"
@@ -1455,7 +1531,7 @@ class RuntimeTests(unittest.TestCase):
             "检测到的后端",
             "运行器策略",
             "低显存安全默认值",
-            "已验证 16GB 配置",
+            "推荐 16GB 起步配置",
         ):
             self.assertIn(chinese_copy, i18n_source)
 
@@ -1631,7 +1707,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("5Yib5bu66I2J56i/", source)
         self.assertIn("5pi+5a2Y5LiO5ZCv5Yqo", source)
         self.assertIn("5L2O5pi+5a2Y5Y246L29", source)
-        self.assertIn("5bey6aqM6K+BIDE2R0Ig6YWN572u", source)
+        self.assertIn("5o6o6I2QIDE2R0Ig6LW35q2l6YWN572u", source)
         self.assertIn("5qC35pys57yp5pS+", source)
         self.assertIn("5pWw5o2u6ZuG6Zi75aGe", source)
         self.assertIn("5Lu75Yqh", source)

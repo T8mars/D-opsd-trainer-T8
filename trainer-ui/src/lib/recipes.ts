@@ -15,7 +15,6 @@ export type RecipeProductionProfile = {
   blockOffload: boolean;
   runnerScript: string;
   timeoutSeconds: number;
-  verifiedRun: string;
   caution: string;
 };
 
@@ -61,8 +60,7 @@ export const recipes: Recipe[] = [
       blockOffload: false,
       runnerScript: 'scripts/run_zimage_smoke.sh',
       timeoutSeconds: 3600,
-      verifiedRun: 'zimage_style_res05_artifacts_2step_202606221528',
-      caution: '0.75 is verified but close to the 16GB ceiling; 1.0 OOMs on this GPU.',
+      caution: '0.75 is close to the 16GB ceiling; 1.0 OOMs on this GPU.',
     },
     status: 'ready',
   },
@@ -92,7 +90,6 @@ export const recipes: Recipe[] = [
       blockOffload: false,
       runnerScript: 'scripts/run_flux2_smoke.sh',
       timeoutSeconds: 4200,
-      verifiedRun: 'flux2_identity_res0625_artifacts_scale05_5step_20260623045623',
       caution: 'Native full-size 0.625 inline sample writing OOMed; keep sample scale at 0.5.',
     },
     status: 'ready',
@@ -122,7 +119,6 @@ export const recipes: Recipe[] = [
       blockOffload: false,
       runnerScript: 'scripts/run_flux2_editing_smoke.sh',
       timeoutSeconds: 4200,
-      verifiedRun: 'flux2_editing_res05625_artifacts_scale05_5step_20260623044037',
       caution: 'Higher than 0.5625 and artifact writing beyond five steps need fresh OOM testing.',
     },
     status: 'ready',

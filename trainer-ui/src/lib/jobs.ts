@@ -6,29 +6,16 @@ import { promisify } from 'util';
 import { bundledDatasets, combineDatasetSelections, findRegisteredDataset, validateDataset } from '@/lib/datasets';
 import { resolveProjectRoot } from '@/lib/project';
 import { productionProfileForRecipe, recipes, type RecipeId, type RecipeProductionProfile } from '@/lib/recipes';
+import {
+  flattenTrainingConfigForRunner,
+  migrateTrainingOverridesToV2,
+  type LegacyTrainingOverrides,
+  type TrainingOverridesV2,
+} from '@/lib/trainingConfig';
 
 export type JobStatus = 'draft' | 'queued' | 'running' | 'completed' | 'failed' | 'stopped';
 
-export type TrainingOverrides = {
-  maxTrainSteps?: number;
-  epochs?: number;
-  learningRateGen?: number;
-  batchSize?: number;
-  gradientAccumulationSteps?: number;
-  checkpointSteps?: number;
-  sampleSteps?: number;
-  targetResolution?: number;
-  resolutionScale?: number;
-  sampleResolutionScale?: number;
-  finalSampleResolutionScale?: number;
-  skipInitialSample?: boolean;
-  saveSamples?: boolean;
-  saveCheckpoints?: boolean;
-  lowVram?: boolean;
-  use8bitAdam?: boolean;
-  blockOffload?: boolean;
-  blockOffloadNumBlocks?: number;
-};
+export type TrainingOverrides = LegacyTrainingOverrides;
 
 export type TrainerJob = {
   id: string;
@@ -52,6 +39,7 @@ export type TrainerJob = {
   use8bitAdam: boolean;
   blockOffload?: boolean;
   blockOffloadNumBlocks?: number;
+  trainingConfig?: TrainingOverridesV2;
   saveSamples: boolean;
   saveCheckpoints: boolean;
   skipInitialSample?: boolean;
@@ -295,7 +283,7 @@ function profileEnvAssignments(
   expName: string,
   outputDir = '../trainer-data/runs',
   datasetEnv = '',
-  overrides: TrainingOverrides = {},
+  overrides: TrainingOverrides | TrainingOverridesV2 = {},
 ) {
   const values = defaultTrainingValues(profile.id.includes('zimage') ? 'z-image-turbo-vlm' : profile.id.includes('editing') ? 'flux2-klein-editing' : 'flux2-klein-identity', profile, overrides);
   return [
@@ -307,7 +295,7 @@ function profileEnvAssignments(
     values.finalSampleResolutionScale ? `FINAL_SAMPLE_RESOLUTION_SCALE=${values.finalSampleResolutionScale}` : '',
     `TARGET_RESOLUTION=${values.targetResolution}`,
     `MAX_TRAIN_STEPS=${values.maxTrainSteps}`,
-    `EPOCHS=${values.epochs}`,
+    `EPOCHS=${internalEpochsForMaxTrainSteps(values.maxTrainSteps)}`,
     `SAMPLE_STEPS=${values.sampleSteps}`,
     `CHECKPOINT_STEPS=${values.checkpointSteps}`,
     `LEARNING_RATE_GEN=${values.learningRateGen}`,
@@ -341,7 +329,7 @@ function datasetEnvAssignmentsForJob(job: Pick<TrainerJob, 'datasetPath'>) {
   ].join(' ');
 }
 
-function commandForProductionProfile(recipeId: RecipeId, expName: string, datasetPath?: string, trainingOverrides?: TrainingOverrides) {
+function commandForProductionProfile(recipeId: RecipeId, expName: string, datasetPath?: string, trainingOverrides?: TrainingOverrides | TrainingOverridesV2) {
   const profile = productionProfileForRecipe(recipeId);
   if (!profile) return commandForRecipeSmoke(recipeId, expName);
   const rootWsl = bashQuote(toWslPath(projectRoot()));
@@ -396,32 +384,8 @@ function boolOrUndefined(value: unknown) {
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function normalizeTrainingOverrides(overrides?: TrainingOverrides): TrainingOverrides {
-  if (!overrides) return {};
-  const normalized: TrainingOverrides = {
-    maxTrainSteps: boundedInt(overrides.maxTrainSteps, 1, 200000),
-    epochs: boundedInt(overrides.epochs, 1, 10000),
-    learningRateGen: boundedFloat(overrides.learningRateGen, 1e-8, 1),
-    batchSize: boundedInt(overrides.batchSize, 1, 64),
-    gradientAccumulationSteps: boundedInt(overrides.gradientAccumulationSteps, 1, 1024),
-    checkpointSteps: boundedInt(overrides.checkpointSteps, 1, 200000),
-    sampleSteps: boundedInt(overrides.sampleSteps, 1, 200000),
-    targetResolution: boundedInt(overrides.targetResolution, 256, 2048),
-    resolutionScale: boundedFloat(overrides.resolutionScale, 0.125, 2),
-    sampleResolutionScale: boundedFloat(overrides.sampleResolutionScale, 0.125, 2),
-    finalSampleResolutionScale: boundedFloat(overrides.finalSampleResolutionScale, 0.125, 2),
-    blockOffloadNumBlocks: boundedInt(overrides.blockOffloadNumBlocks, 1, 16),
-    skipInitialSample: boolOrUndefined(overrides.skipInitialSample),
-    saveSamples: boolOrUndefined(overrides.saveSamples),
-    saveCheckpoints: boolOrUndefined(overrides.saveCheckpoints),
-    lowVram: boolOrUndefined(overrides.lowVram),
-    use8bitAdam: boolOrUndefined(overrides.use8bitAdam),
-    blockOffload: boolOrUndefined(overrides.blockOffload),
-  };
-
-  return Object.fromEntries(
-    Object.entries(normalized).filter(([, value]) => value !== undefined),
-  ) as TrainingOverrides;
+function normalizeTrainingOverrides(trainingOverrides?: TrainingOverrides | TrainingOverridesV2) {
+  return migrateTrainingOverridesToV2(trainingOverrides);
 }
 
 function defaultLearningRate(recipeId: RecipeId) {
@@ -429,12 +393,17 @@ function defaultLearningRate(recipeId: RecipeId) {
   return finiteNumber(raw) ?? (recipeId === 'z-image-turbo-vlm' ? 1e-4 : 2e-5);
 }
 
-function defaultTrainingValues(recipeId: RecipeId, profile?: RecipeProductionProfile, overrides?: TrainingOverrides) {
+function internalEpochsForMaxTrainSteps(maxTrainSteps: number) {
+  return Math.max(1, Math.floor(maxTrainSteps) + 1);
+}
+
+function defaultTrainingValues(recipeId: RecipeId, profile?: RecipeProductionProfile, config?: TrainingOverrides | TrainingOverridesV2) {
   const recipe = recipes.find(item => item.id === recipeId);
+  const overrides = flattenTrainingConfigForRunner(migrateTrainingOverridesToV2(config));
   const maxTrainSteps = overrides?.maxTrainSteps ?? recipe?.defaultSteps ?? profile?.maxTrainSteps ?? 10;
   return {
     maxTrainSteps,
-    epochs: overrides?.epochs ?? 2,
+    epochs: internalEpochsForMaxTrainSteps(maxTrainSteps),
     learningRateGen: overrides?.learningRateGen ?? defaultLearningRate(recipeId),
     batchSize: overrides?.batchSize ?? 1,
     gradientAccumulationSteps: overrides?.gradientAccumulationSteps ?? 1,
@@ -459,7 +428,7 @@ function timeoutForStepCount(profile: RecipeProductionProfile, maxTrainSteps: nu
   return Math.max(profile.timeoutSeconds, Math.min(estimated, 172800));
 }
 
-function timeoutForOverrides(profile: RecipeProductionProfile, overrides?: TrainingOverrides) {
+function timeoutForOverrides(profile: RecipeProductionProfile, overrides?: TrainingOverrides | TrainingOverridesV2) {
   const values = defaultTrainingValues(
     profile.id.includes('zimage') ? 'z-image-turbo-vlm' : profile.id.includes('editing') ? 'flux2-klein-editing' : 'flux2-klein-identity',
     profile,
@@ -469,7 +438,12 @@ function timeoutForOverrides(profile: RecipeProductionProfile, overrides?: Train
 }
 
 function timeoutForJob(profile: RecipeProductionProfile, job: TrainerJob) {
-  return timeoutForStepCount(profile, job.maxTrainSteps || profile.maxTrainSteps);
+  const values = defaultTrainingValues(job.recipeId, profile, trainingConfigForJob(job));
+  return timeoutForStepCount(profile, values.maxTrainSteps || profile.maxTrainSteps);
+}
+
+function trainingConfigForJob(job: TrainerJob) {
+  return job.trainingConfig ?? migrateTrainingOverridesToV2(job);
 }
 
 function recipeName(recipeId: RecipeId) {
@@ -587,7 +561,7 @@ async function seedJobs(): Promise<TrainerJob[]> {
       maxTrainSteps: 1,
       currentStep: 1,
       command: commandForFlux2Smoke(SMOKE_EXP),
-      notes: 'Verified one-step low-VRAM smoke on RTX 4060 Ti 16GB.',
+      notes: 'One-step low-VRAM reference run on RTX 4060 Ti 16GB.',
       source: 'seeded-smoke',
     },
   ];
@@ -706,8 +680,8 @@ export async function createDraftJob(
   const now = new Date().toISOString();
   const base = recipes.find(recipe => recipe.id === recipeId) ?? recipes[1];
   const profile = productionProfileForRecipe(base.id);
-  const overrides = normalizeTrainingOverrides(trainingOverrides);
-  const trainingValues = defaultTrainingValues(base.id, profile, overrides);
+  const trainingConfig = normalizeTrainingOverrides(trainingOverrides);
+  const trainingValues = defaultTrainingValues(base.id, profile, trainingConfig);
   const datasetPreflight = await preflightDraftDatasetPaths(base.id, datasetPath, datasetPaths);
   const expName = `${slug(base.shortName)}_${timestampSlug()}`;
   const verifiedProfileRecipe = Boolean(profile);
@@ -733,6 +707,7 @@ export async function createDraftJob(
     use8bitAdam: trainingValues.use8bitAdam,
     blockOffload: trainingValues.blockOffload,
     blockOffloadNumBlocks: trainingValues.blockOffloadNumBlocks,
+    trainingConfig,
     saveSamples: trainingValues.saveSamples,
     saveCheckpoints: trainingValues.saveCheckpoints,
     skipInitialSample: trainingValues.skipInitialSample,
@@ -751,10 +726,10 @@ export async function createDraftJob(
     currentStep: 0,
     command:
       verifiedProfileRecipe
-        ? commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, overrides)
+        ? commandForProductionProfile(base.id, expName, datasetPreflight?.datasetPath, trainingConfig)
         : `python scripts/check_runtime.py build-command --recipe-id ${base.id} --exp-name ${expName}`,
     notes: `${profile
-      ? `Draft created from the UI. Start uses editable training controls on top of the verified 16GB memory profile (${profile.label}). Evidence: ${profile.verifiedRun}.`
+      ? `Draft created from the UI. Start uses editable training controls on top of the recommended 16GB memory profile (${profile.label}).`
       : 'Draft created from the UI. Runner launch for this recipe is pending verification.'}${datasetPreflight ? ` ${datasetPreflight.note ? `${datasetPreflight.note} ` : ''}Dataset preflight OK: ${datasetPreflight.datasetValidRows}/${datasetPreflight.datasetRows} rows.` : ''}`,
     source: 'ui-draft',
   };
@@ -824,7 +799,7 @@ export async function cloneJob(id: string) {
   cloned = {
     ...cloned,
     command: productionProfileForRecipe(source.recipeId)
-      ? commandForProductionProfile(source.recipeId, expName, source.datasetPath, cloned)
+      ? commandForProductionProfile(source.recipeId, expName, source.datasetPath, trainingConfigForJob(cloned))
       : cloned.command,
   };
 
@@ -1240,12 +1215,14 @@ function runnerCommandForJob(job: TrainerJob): { ok: true; command: string } | {
     };
   }
 
+  const jobConfig = trainingConfigForJob(job);
+
   if (job.recipeId === 'flux2-klein-identity') {
     const profile = productionProfileForRecipe(job.recipeId);
     if (profile) {
       return {
         ok: true,
-        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, job)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
+        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, jobConfig)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
       };
     }
     return {
@@ -1259,7 +1236,7 @@ function runnerCommandForJob(job: TrainerJob): { ok: true; command: string } | {
     if (profile) {
       return {
         ok: true,
-        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, job)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
+        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, jobConfig)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
       };
     }
     return {
@@ -1273,7 +1250,7 @@ function runnerCommandForJob(job: TrainerJob): { ok: true; command: string } | {
     if (profile) {
       return {
         ok: true,
-        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, job)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
+        command: `${profileEnvAssignments(profile, job.expName, '../trainer-data/runs', datasetEnv, jobConfig)} timeout ${timeoutForJob(profile, job)} bash ${profile.runnerScript}`,
       };
     }
     return {
