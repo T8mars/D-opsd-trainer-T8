@@ -41,6 +41,21 @@ def free_cuda_memory():
             pass
 
 
+def is_cuda_oom(error):
+    message = str(error).lower()
+    return isinstance(error, torch.cuda.OutOfMemoryError) or "out of memory" in message
+
+
+def request_cpu_offload_retry(request):
+    retry_request = dict(request)
+    retry_request.update({
+        "block_offload": False,
+        "final_sampler_cpu_offload": True,
+        "block_offload_fallback": "model_cpu_offload_after_group_oom",
+    })
+    return retry_request
+
+
 def append_log(request, message):
     log_path = request.get("log_path")
     if not log_path:
@@ -105,6 +120,14 @@ def configure_tiled_vae(vae, request):
 
 
 def configure_pipeline_cpu_offload(pipeline, request, device, inference_dtype, vae_dtype):
+    if request.get("block_offload"):
+        pipeline.vae.to(device, dtype=vae_dtype)
+        pipeline.text_encoder.to(device, dtype=inference_dtype)
+        message = "Final sampler model CPU offload skipped because group block offload is requested"
+        print(message)
+        append_log(request, message)
+        return False
+
     if request.get("final_sampler_cpu_offload", True) and torch.cuda.is_available():
         pipeline.vae.to(dtype=vae_dtype)
         pipeline.text_encoder.to(dtype=inference_dtype)
@@ -174,13 +197,30 @@ def load_pipeline(request, device, inference_dtype, vae_dtype):
         enable_transformer_block_offload(
             pipeline.transformer,
             device,
-            request.get("block_offload_num_blocks", 2),
+            request.get("block_offload_num_blocks", 1),
         )
     return pipeline
 
 
 @torch.inference_mode()
 def run_final_samples(request):
+    retry_request = None
+    try:
+        run_final_samples_once(request)
+    except RuntimeError as error:
+        if not (request.get("block_offload") and is_cuda_oom(error)):
+            raise
+        message = "Final sampler group block offload hit CUDA OOM; retrying with model CPU offload"
+        print(message)
+        append_log(request, message)
+        retry_request = request_cpu_offload_retry(request)
+
+    if retry_request is not None:
+        free_cuda_memory()
+        run_final_samples_once(retry_request)
+
+
+def run_final_samples_once(request):
     append_log(request, "Starting deferred final sample generation")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     inference_dtype = dtype_from_name(request.get("inference_dtype", "bf16"))

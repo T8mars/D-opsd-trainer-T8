@@ -37,7 +37,7 @@ def parse_args():
                         help="Offload frozen VAE/text encoder to CPU between batch encoding and transformer training.")
     parser.add_argument("--block-offload", action=argparse.BooleanOptionalAction, default=False,
                         help="Use Diffusers group block offload for the transformer when low VRAM is not enough.")
-    parser.add_argument("--block-offload-num-blocks", type=int, default=2,
+    parser.add_argument("--block-offload-num-blocks", type=int, default=1,
                         help="Transformer blocks per CPU/GPU transfer group for --block-offload.")
     parser.add_argument("--sample-resolution-scale", type=float, default=1.0,
                         help="Scale inline sample image generation. Use below 1.0 for low-VRAM smoke sample previews.")

@@ -242,13 +242,13 @@ def write_final_sampler_request(
         "edit_sys_prompt": args.edit_sys_prompt,
         "vae_dtype": args.vae_dtype,
         "inference_dtype": "bf16" if args.mixed_precision == "bf16" else "fp16",
-        "final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload),
+        "final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload),
         "tiled_vae": bool(args.tiled_vae),
         "vae_tile_size": int(args.vae_tile_size),
         "vae_tile_overlap": float(args.vae_tile_overlap),
         "requested_block_offload": bool(args.block_offload),
-        "block_offload": False,
-        "block_offload_num_blocks": 0,
+        "block_offload": bool(args.block_offload),
+        "block_offload_num_blocks": int(args.block_offload_num_blocks),
         "sampler_script": str(Path(__file__).resolve().with_name("sample_flux2_final.py")),
     }
     request_path = final_sampler_dir / f"request_step_{global_step}.json"

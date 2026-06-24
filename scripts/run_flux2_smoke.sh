@@ -106,7 +106,7 @@ else
 fi
 
 if [[ "${BLOCK_OFFLOAD:-0}" == "1" || "${BLOCK_OFFLOAD:-}" == "true" ]]; then
-  TRAIN_ARGS+=(--block-offload --block-offload-num-blocks "${BLOCK_OFFLOAD_NUM_BLOCKS:-2}")
+  TRAIN_ARGS+=(--block-offload --block-offload-num-blocks "${BLOCK_OFFLOAD_NUM_BLOCKS:-1}")
 fi
 
 run_training() {

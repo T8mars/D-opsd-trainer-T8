@@ -93,7 +93,7 @@ function defaultTrainingForm(recipe = defaultRecipe): TrainingForm {
     lowVram: true,
     use8bitAdam: true,
     blockOffload: profile.blockOffload,
-    blockOffloadNumBlocks: 2,
+    blockOffloadNumBlocks: 1,
   };
 }
 
@@ -668,7 +668,7 @@ export default function NewJobWizard() {
               {selectedProfile.caution}
             </div>
             <div className="mt-2 rounded-md bg-black/25 p-2 font-mono text-xs leading-5 text-ink-500">
-              {t('optionalFallback')}: --block-offload --block-offload-num-blocks 2
+              {t('optionalFallback')}: --block-offload --block-offload-num-blocks 1
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {[

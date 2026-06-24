@@ -464,7 +464,7 @@ function defaultTrainingValues(recipeId: RecipeId, profile?: RecipeProductionPro
     lowVram: overrides?.lowVram ?? Boolean(profile),
     use8bitAdam: overrides?.use8bitAdam ?? Boolean(profile),
     blockOffload: overrides?.blockOffload ?? profile?.blockOffload ?? false,
-    blockOffloadNumBlocks: overrides?.blockOffloadNumBlocks ?? 2,
+    blockOffloadNumBlocks: overrides?.blockOffloadNumBlocks ?? 1,
   };
 }
 

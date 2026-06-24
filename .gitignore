@@ -34,3 +34,8 @@ trainer-ui/prisma/dev.db-journal
 
 *.log
 *.tmp
+
+/SKILL.md
+/skill.md
+/roadmap.md
+/ROADMAP.md

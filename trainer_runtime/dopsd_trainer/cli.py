@@ -39,7 +39,7 @@ def main() -> None:
     command_parser.add_argument("--no-deepspeed", action="store_true")
     command_parser.add_argument("--low-vram", action="store_true")
     command_parser.add_argument("--block-offload", action="store_true")
-    command_parser.add_argument("--block-offload-num-blocks", type=int, default=2)
+    command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)
     command_parser.add_argument("--resolution-scale")
     command_parser.add_argument("--no-save-samples", action="store_true")
     command_parser.add_argument("--no-save-checkpoints", action="store_true")

@@ -548,7 +548,7 @@ class RuntimeTests(unittest.TestCase):
                 use_deepspeed=False,
                 low_vram=True,
                 block_offload=True,
-                block_offload_num_blocks=2,
+                block_offload_num_blocks=1,
                 prefer_local_models=False,
             ),
             PROJECT_ROOT,
@@ -557,8 +557,14 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("--low-vram", command["args"])
         self.assertIn("--block-offload", command["args"])
         block_index = command["args"].index("--block-offload-num-blocks")
-        self.assertEqual(command["args"][block_index + 1], "2")
-        self.assertIn("--block-offload --block-offload-num-blocks 2", command["display"])
+        self.assertEqual(command["args"][block_index + 1], "1")
+        self.assertIn("--block-offload --block-offload-num-blocks 1", command["display"])
+
+    def test_build_command_cli_defaults_block_offload_to_one_block(self) -> None:
+        cli_source = (PROJECT_ROOT / "trainer_runtime" / "dopsd_trainer" / "cli.py").read_text(encoding="utf-8")
+
+        self.assertIn('command_parser.add_argument("--block-offload-num-blocks", type=int, default=1)', cli_source)
+        self.assertNotIn('command_parser.add_argument("--block-offload-num-blocks", type=int, default=2)', cli_source)
 
     def test_dopsd_training_scripts_expose_diffusers_group_block_offload(self) -> None:
         for relative in (
@@ -782,7 +788,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("args.final_sample_resolution_scale", train_source)
         self.assertIn("unwrap_model(gen_model, accelerator).save_pretrained", train_source)
         self.assertIn('"requested_block_offload": bool(args.block_offload)', train_source)
-        self.assertIn('"block_offload": False', train_source)
+        self.assertIn('"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload)', train_source)
+        self.assertIn('"block_offload": bool(args.block_offload)', train_source)
+        self.assertIn('"block_offload_num_blocks": int(args.block_offload_num_blocks)', train_source)
         self.assertIn("del pipeline, gen_model", train_source)
         self.assertIn("Final sample generation request ready for runner", train_source)
         self.assertNotIn("os.execv(", train_source)
@@ -873,13 +881,43 @@ class RuntimeTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("--final-sampler-cpu-offload", args_source)
-        self.assertIn('"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload)', train_source)
+        self.assertIn('"final_sampler_cpu_offload": bool(args.final_sampler_cpu_offload) and not bool(args.block_offload)', train_source)
         self.assertIn("def configure_pipeline_cpu_offload", sampler_source)
         self.assertIn('request.get("final_sampler_cpu_offload", True)', sampler_source)
         self.assertIn("pipeline.enable_model_cpu_offload(device=device)", sampler_source)
         self.assertIn("Final sampler model CPU offload enabled", sampler_source)
         self.assertIn("pipeline.vae.to(dtype=vae_dtype)", sampler_source)
         self.assertIn("pipeline.vae.to(device, dtype=vae_dtype)", sampler_source)
+
+    def test_flux2_identity_final_sampler_prioritizes_block_offload_over_cpu_offload(self) -> None:
+        sampler_source = (
+            PROJECT_ROOT / "flux2-klein_self-distill-edit" / "sample_flux2_final.py"
+        ).read_text(encoding="utf-8")
+
+        block_guard_index = sampler_source.find('if request.get("block_offload")')
+        cpu_offload_index = sampler_source.find('request.get("final_sampler_cpu_offload", True)')
+
+        self.assertGreaterEqual(block_guard_index, 0)
+        self.assertGreaterEqual(cpu_offload_index, 0)
+        self.assertLess(
+            block_guard_index,
+            cpu_offload_index,
+            "Deferred final sampler should prefer Diffusers group block offload over model CPU offload when both are requested.",
+        )
+
+    def test_flux2_identity_final_sampler_retries_block_offload_oom_with_cpu_offload(self) -> None:
+        sampler_source = (
+            PROJECT_ROOT / "flux2-klein_self-distill-edit" / "sample_flux2_final.py"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("def is_cuda_oom", sampler_source)
+        self.assertIn("def request_cpu_offload_retry", sampler_source)
+        self.assertIn("except RuntimeError as error", sampler_source)
+        self.assertIn("request.get(\"block_offload\") and is_cuda_oom(error)", sampler_source)
+        self.assertIn("\"block_offload\": False", sampler_source)
+        self.assertIn("\"final_sampler_cpu_offload\": True", sampler_source)
+        self.assertIn("retrying with model CPU offload", sampler_source)
+        self.assertIn("run_final_samples_once(retry_request)", sampler_source)
 
     def test_smoke_scripts_allow_env_controlled_artifact_writes(self) -> None:
         for script_name in (
@@ -1519,6 +1557,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn("SAVE_SAMPLES=${values.saveSamples ? '1' : '0'}", jobs_source)
         self.assertIn("SAVE_CHECKPOINTS=${values.saveCheckpoints ? '1' : '0'}", jobs_source)
         self.assertIn("SAMPLE_RESOLUTION_SCALE=${values.sampleResolutionScale}", jobs_source)
+        self.assertIn("blockOffloadNumBlocks: overrides?.blockOffloadNumBlocks ?? 1", jobs_source)
+        self.assertNotIn("blockOffloadNumBlocks: overrides?.blockOffloadNumBlocks ?? 2", jobs_source)
         self.assertIn("Start uses editable training controls", jobs_source)
         self.assertNotIn("Start runs the verified low-VRAM smoke profile", jobs_source)
         self.assertNotIn("Evidence: ${profile.verifiedRun}", jobs_source)

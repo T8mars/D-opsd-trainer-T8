@@ -103,7 +103,7 @@ class TrainingConfig:
     edit_sys_prompt: str | None = None
     low_vram: bool = False
     block_offload: bool = False
-    block_offload_num_blocks: int = 2
+    block_offload_num_blocks: int = 1
     resolution_scale: str | None = None
     save_samples: bool = True
     save_checkpoints: bool = True

@@ -36,7 +36,7 @@ def parse_args():
                         help="Offload frozen VAE/text encoder/VLM to CPU between conditioning and transformer training.")
     parser.add_argument("--block-offload", action=argparse.BooleanOptionalAction, default=False,
                         help="Use Diffusers group block offload for the transformer when low VRAM is not enough.")
-    parser.add_argument("--block-offload-num-blocks", type=int, default=2,
+    parser.add_argument("--block-offload-num-blocks", type=int, default=1,
                         help="Transformer blocks per CPU/GPU transfer group for --block-offload.")
 
     #vae
